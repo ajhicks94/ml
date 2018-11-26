@@ -104,6 +104,7 @@ if __name__ == "__main__":
     print('Loading data...')
     (x_train, y_train), (x_test, y_test) = imdb.load_data(num_words=max_features)
     wid = imdb.get_word_index()
+    print(wid)
     id2w = {i: word for word, i in wid.items()}
     print([id2w.get(i, ' ') for i in x_train[0]])
     print(x_train[0])

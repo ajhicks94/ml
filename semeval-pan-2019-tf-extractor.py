@@ -59,34 +59,35 @@ def parse_options():
 
 
 ########## ARTICLE HANDLING ##########
-def handleArticle(article, outFile):
+def handleArticle(article, outFile, data):
     termfrequencies = {}
 
     # get text from article
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
     textcleaned = re.sub('[^a-z ]', '', text.lower())
 
-    maxlen = 2000
-    word_index = imdb.get_word_index()
-    words = set(text_to_word_sequence(textcleaned))
-    x_test = [[word_index[w] for w in words if w in word_index]]
-    print(x_test)
-    x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
-    vector = np.array([x_test.flatten()])
+    #maxlen = 2000
+    #word_index = imdb.get_word_index()
+    #words = set(text_to_word_sequence(textcleaned))
+    #x_test = [[word_index[w] for w in words if w in word_index]]
+    #print(x_test)
+    #x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
+    #vector = np.array([x_test.flatten()])
 
     #with open(path) as f:
     #    word_index = json.load(f)
 
     # counting tokens
-    with open('data.json') as data_file:
-        print(data_file.errors)
-        data = json.load(data_file)
+    #with open('data.json') as data_file:
+        #print(data_file.errors)
+     #   data = json.load(data_file)
+     #   data_file.close()
         #data['id'] = 12
 
     #print(data)
     #data['dab'] = 50
 
-    f = open('data.json', 'w+')
+
     #print(type(data))
         #outfile.write(str_)
     #for x in ['1','2','3']:
@@ -100,49 +101,51 @@ def handleArticle(article, outFile):
         #    termfrequencies[token] += 1
         #else:
         #    termfrequencies[token] = 1
-
-    json.dump(data, f)
+    #f = open('data.json', 'w+')
+    #json.dump(data, f)
+    #f.close()
     #words = set(text_to_word_sequence(textcleaned))
-    vocab_size = len(words)
-    oh = one_hot(textcleaned, round(1.3*vocab_size))
+    #vocab_size = len(words)
+    #oh = one_hot(textcleaned, round(1.3*vocab_size))
     #print('oh= \n\n', oh)
     #res = hashing_trick(textcleaned, round(vocab_size*1.3), hash_function='md5')
     #print(res)
     #print(termfrequencies, '\n')
-    terms = sorted(termfrequencies, key=termfrequencies.get, reverse=True)
-    d = dict()
-    for w in terms:
-        d[w] = termfrequencies[w]
+    #terms = sorted(termfrequencies, key=termfrequencies.get, reverse=True)
+    #d = dict()
+    #for w in terms:
+    #    d[w] = termfrequencies[w]
     #print('\n\n')
-    print(d)
+    #print(d)
     #print(textcleaned)
-    termfrequencies = d
-    wvec = []
-    for token in textcleaned.split():
-        i = 1
-        for x in d.keys():
-            if x == token:
-                break
-            i +=1
-        wvec.append(i)
+    #termfrequencies = d
+    #wvec = []
+    #for token in textcleaned.split():
+    #    i = 1
+    #    for x in d.keys():
+    #        if x == token:
+    #            break
+    #        i +=1
+    #    wvec.append(i)
 
     #print(wvec)
-    sys.exit()
+    #sys.exit()
     # writing counts: <article id> <token>:<count> <token>:<count> ...
-    outFile.write(article.get("id"))
-    for token, count in termfrequencies.items():
-        outFile.write(" " + str(token) + ":" + str(count))
-    outFile.write("\n")
+    #outFile.write(article.get("id"))
+    #for token, count in termfrequencies.items():
+     #   outFile.write(" " + str(token) + ":" + str(count))
+    #outFile.write("\n")
     print(article.get("id") + " completed.")
 
 
 
 ########## SAX FOR STREAM PARSING ##########
 class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
-    def __init__(self, outFile):
+    def __init__(self, outFile, data):
         xml.sax.ContentHandler.__init__(self)
         self.outFile = outFile
         self.lxmlhandler = "undefined"
+        self.data = data
 
     def startElement(self, name, attrs):
         if name != "articles":
@@ -160,7 +163,7 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
             self.lxmlhandler.endElement(name)
             if name == "article":
                 # pass to handleArticle function
-                handleArticle(self.lxmlhandler.etree.getroot(), self.outFile)
+                handleArticle(self.lxmlhandler.etree.getroot(), self.outFile, self.data)
                 self.lxmlhandler = "undefined"
             
 
@@ -168,14 +171,19 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
 ########## MAIN ##########
 def main(inputDataset, outputFile):
     """Main method of this module."""
-
+    with open('data.json') as data_file:
+        #print(data_file.errors)
+        data = json.load(data_file)
+        data_file.close()
     with open(outputFile, 'w') as outFile:
         for file in os.listdir(inputDataset):
             if file.endswith(".xml"):
                 with open(inputDataset + "/" + file) as inputRunFile:
-                    xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(outFile))
+                    xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(outFile, data))
 
-
+    f = open('data.json', 'w+')
+    json.dump(data, f)
+    f.close()
     print("The vectors have been written to the output file.")
 
 

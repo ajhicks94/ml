@@ -23,8 +23,7 @@ maxlen = 80
 batch_size = 32
 
 print('Loading data...')
-im = np.load('~/.keras/datasets/imdb.npz')
-print(im)
+
 (x_train, y_train), (x_test, y_test) = imdb.load_data(num_words=max_features)
 print(len(x_train), 'train sequences')
 print(len(x_test), 'test sequences`')
