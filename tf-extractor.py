@@ -32,8 +32,8 @@ from keras.datasets import imdb
 def parse_options():
     """Parses the command line options."""
     try:
-        long_options = ["inputDataset=", "outputFile="]
-        opts, _ = getopt.getopt(sys.argv[1:], "d:o:", long_options)
+        long_options = ["inputDataset=", "outputFile=", "max_size="]
+        opts, _ = getopt.getopt(sys.argv[1:], "d:o:n:", long_options)
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
@@ -46,6 +46,8 @@ def parse_options():
             inputDataset = arg
         elif opt in ("-o", "--outputFile"):
             outputFile = arg
+        elif opt in "-n":
+            max_size = arg
         else:
             assert False, "Unknown option."
     if inputDataset == "undefined":
@@ -56,7 +58,7 @@ def parse_options():
     if outputFile == "undefined":
         sys.exit("Output file, the file to which the vectors should be written, is undefined. Use option -o or --outputFile.")
 
-    return (inputDataset, outputFile)
+    return (inputDataset, outputFile, max_size)
 
 def create_word_index(article, data):
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
@@ -68,7 +70,7 @@ def create_word_index(article, data):
         else:
             data[token] = 1
     
-    print(article.get("id") + " completed.")
+    #print(article.get("id") + " completed.")
 
 ########## ARTICLE HANDLING ##########
 def handleArticle(article, outFile, data):
@@ -153,13 +155,18 @@ def handleArticle(article, outFile, data):
 
 ########## SAX FOR STREAM PARSING ##########
 class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
-    def __init__(self, outFile, data):
+    def __init__(self, outFile, data, max_articles):
         xml.sax.ContentHandler.__init__(self)
         self.outFile = outFile
         self.lxmlhandler = "undefined"
         self.data = data
+        self.max_articles = int(max_articles)
+        self.counter = 0
 
     def startElement(self, name, attrs):
+        if self.counter == self.max_articles:
+            err = "\nMaximum of " + str(self.max_articles) + " articles has been reached."
+            raise Exception(err)
         if name != "articles":
             if name == "article":
                 self.lxmlhandler = lxml.sax.ElementTreeContentHandler()
@@ -175,15 +182,14 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
             self.lxmlhandler.endElement(name)
             if name == "article":
                 # pass to handleArticle function
-                handleArticle(self.lxmlhandler.etree.getroot(), self.outFile, self.data)
+                create_word_index(self.lxmlhandler.etree.getroot(), self.data)
+                self.counter += 1
+                #handleArticle(self.lxmlhandler.etree.getroot(), self.outFile, self.data)
                 self.lxmlhandler = "undefined"
-            
-
 
 ########## MAIN ##########
-def main(inputDataset, outputFile):
+def main(inputDataset, outputFile, max_articles=sys.maxsize):
     """Main method of this module."""
-    
     with open('data.json', 'w') as f:
         data = {}
         json.dump(data,f)
@@ -193,7 +199,11 @@ def main(inputDataset, outputFile):
         for file in os.listdir(inputDataset):
             if file.endswith(".xml"):
                 with open(inputDataset + "/" + file) as inputRunFile:
-                    xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(outFile, data))
+                    try:
+                        xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(outFile, data, max_articles))
+                    except Exception as e:
+                        print(e)
+                        break
 
     f = open('data.json', 'w+')
     o = OrderedDict(Counter(data).most_common(len(data)))
