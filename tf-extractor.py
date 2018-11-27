@@ -12,6 +12,7 @@
 # Output is one article per line:
 # <article id> <token>:<count> <token>:<count> ...
 
+
 import json
 import os
 import getopt
@@ -21,6 +22,7 @@ import lxml.sax
 import lxml.etree
 import re
 import numpy as np
+from collections import Counter, OrderedDict
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer, one_hot
 from keras.preprocessing.text import hashing_trick, text_to_word_sequence
@@ -56,7 +58,17 @@ def parse_options():
 
     return (inputDataset, outputFile)
 
+def create_word_index(article, data):
+    text = lxml.etree.tostring(article, encoding="unicode", method="text")
+    textcleaned = re.sub('[^a-z ]', '', text.lower())
 
+    for token in textcleaned.split():
+        if token in data.keys():
+            data[token] += 1
+        else:
+            data[token] = 1
+    
+    print(article.get("id") + " completed.")
 
 ########## ARTICLE HANDLING ##########
 def handleArticle(article, outFile, data):
@@ -171,10 +183,12 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
 ########## MAIN ##########
 def main(inputDataset, outputFile):
     """Main method of this module."""
-    with open('data.json') as data_file:
-        #print(data_file.errors)
-        data = json.load(data_file)
-        data_file.close()
+    
+    with open('data.json', 'w') as f:
+        data = {}
+        json.dump(data,f)
+        f.close()
+   
     with open(outputFile, 'w') as outFile:
         for file in os.listdir(inputDataset):
             if file.endswith(".xml"):
@@ -182,10 +196,10 @@ def main(inputDataset, outputFile):
                     xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(outFile, data))
 
     f = open('data.json', 'w+')
-    json.dump(data, f)
+    o = OrderedDict(Counter(data).most_common(len(data)))
+    json.dump(o, f)
     f.close()
     print("The vectors have been written to the output file.")
-
 
 if __name__ == '__main__':
     main(*parse_options())

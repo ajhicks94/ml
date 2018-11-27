@@ -28,37 +28,70 @@ import warnings
 
 def load_data(path='imdb.npz', num_words=None, skip_top=0, maxlen=None, seed=113,
                     start_char=1, oov_char=2, index_from=3, **kwargs):
+
+    # load data from data.json
+    # since it is already in order, preserve order w/ OrderedDict
+    # load into OrderedDict
+    # in order to get index by the key, use list(odict).index(word)
+    # odict_list = list(odict)
+    # for w in words: odict_list.index(word)
+
+    # Start with numpy arrays
     with np.load(path) as f:
         x_train, labels_train = f['x_train'], f['y_train']
         x_test, labels_test = f['x_test'], f['y_test']
 
+    
     _remove_long_seq = sequence._remove_long_seq
 
+    # Makes random numbers predictable based on (seed)
     np.random.seed(seed)
+
+    # Returns an array of evenly spaced values ranged [0, len(x_train))
+    # In english = it's getting an array of the indices of x_train
+    # E.G. if len(x_train) = 3, indices => [0,1,2]
     indices = np.arange(len(x_train))
+
+    # Shuffles the contents of indices
     np.random.shuffle(indices)
+
+    # Rearranges x_train to match ordering of indices
+    # x_train is normally x_train[0], x_train[1], x_train[2]
+    # if indices = [0,2,1], then x_train[indices] => x_train[0], x_train[2], x_train[1]
     x_train = x_train[indices]
+
+    # Do the same to the training labels
     labels_train = labels_train[indices]
 
+    # Do all the same stuff for the test(validation?) set
     indices = np.arange(len(x_test))
     np.random.shuffle(indices)
     x_test = x_test[indices]
     labels_test = labels_test[indices]
 
+    # Append x_test to x_train
     xs = np.concatenate([x_train, x_test])
+    # And for the labels
     labels = np.concatenate([labels_train, labels_test])
 
     if start_char is not None:
+        # Adds a start_char to the beginning of each sentence
         xs = [[start_char] + [w + index_from for w in x] for x in xs]
     elif index_from:
+        # for each word_index in each sentence, add index_from to the value
+        # Maybe since the word_index is sorted by count, this omits the
+        #     top index_from most frequent words?
         xs = [[w + index_from for w in x] for x in xs]
 
+    # Trims sentences down to maxlen
     if maxlen:
         xs, labels = _remove_long_seq(maxlen, xs, labels)
         if not xs:
             raise ValueError('After filtering for sequences shorter than maxlen=' +
                              str(maxlen) + ', no sequence was kept. '
                              'Increase maxlen.')
+    # Calculates the max val in xs
+    # Which means the least frequent term if word_index is sorted by desc freq
     if not num_words:
         num_words = max([max(x) for x in xs])
 
@@ -66,16 +99,25 @@ def load_data(path='imdb.npz', num_words=None, skip_top=0, maxlen=None, seed=113
     # reserve 'index_from' (=3 by default) characters:
     # 0 (padding), 1 (start), 2 (OOV)
     if oov_char is not None:
+        # If a word is out-of-vocab, replace it w/ '2'/oov_char
+        # Also remove any words that are less-than skip_top
         xs = [[w if (skip_top <= w < num_words) else oov_char for w in x]
               for x in xs]
     else:
+        # Just remove words that are less-than skip_top
         xs = [[w for w in x if skip_top <= w < num_words]
               for x in xs]
 
+    # Remember x_train only had 3 sentences, right?
     idx = len(x_train)
+
+    # Partition the newly preprocessed training instances back into x_train
     x_train, y_train = np.array(xs[:idx]), np.array(labels[:idx])
+
+    # Same for test
     x_test, y_test = np.array(xs[idx:]), np.array(labels[idx:])
 
+    # Return tuple of training and tuple of test
     return (x_train, y_train), (x_test, y_test)
 
 
