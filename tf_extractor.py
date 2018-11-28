@@ -22,6 +22,7 @@ import lxml.etree
 import re
 import numpy as np
 from collections import Counter, OrderedDict
+from array import array
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer, one_hot
 from keras.preprocessing.text import hashing_trick, text_to_word_sequence
@@ -31,8 +32,8 @@ from keras.datasets import imdb
 def parse_options():
     """Parses the command line options."""
     try:
-        long_options = ["inputDataset=", "outputFile=", "max_size="]
-        opts, _ = getopt.getopt(sys.argv[1:], "d:o:n:", long_options)
+        long_options = ["inputDataset=", "outputFile=", "max_size=", "training_widx"]
+        opts, _ = getopt.getopt(sys.argv[1:], "d:o:n:w", long_options)
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
@@ -40,6 +41,7 @@ def parse_options():
     inputDataset = "undefined"
     outputFile = "undefined"
     max_size = sys.maxsize
+    training_widx = False
 
     for opt, arg in opts:
         if opt in ("-d", "--inputDataset"):
@@ -48,6 +50,8 @@ def parse_options():
             outputFile = arg
         elif opt in "-n":
             max_size = arg
+        elif opt in "-w":
+            training_widx = arg
         else:
             assert False, "Unknown option."
     if inputDataset == "undefined":
@@ -58,7 +62,7 @@ def parse_options():
     if outputFile == "undefined":
         sys.exit("Output file, the file to which the vectors should be written, is undefined. Use option -o or --outputFile.")
 
-    return (inputDataset, outputFile, max_size)
+    return (inputDataset, outputFile, max_size, training_widx)
 
 def clean_and_count(article, data):
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
@@ -138,12 +142,13 @@ def handleArticle(article, outFile, data):
 
 ########## SAX FOR STREAM PARSING ##########
 class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
-    def __init__(self, mode, data, max_articles, outFile=""):
+    def __init__(self, mode, max_articles, word_index={}, data=[], outFile=""):
         xml.sax.ContentHandler.__init__(self)
         self.outFile = outFile
         self.mode = mode
         self.lxmlhandler = "undefined"
         self.data = data
+        self.word_index = word_index
         self.max_articles = int(max_articles)
         self.counter = 0
 
@@ -167,8 +172,33 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
             if name == "article":
                 if self.mode == "widx":
                     clean_and_count(self.lxmlhandler.etree.getroot(), self.data)
+                elif self.mode == "x":
+                    article = self.lxmlhandler.etree.getroot()
+                    x = self.data[0]
+                    y = self.data[1]
+                    row = []
+                    
+                    # Get and clean text
+                    text = lxml.etree.tostring(article, encoding="unicode", method="text")
+                    textcleaned = re.sub('[^a-z ]', '', text.lower())
+
+                    # Split into sequence of words
+                    textcleaned = textcleaned.split()
+
+                    # Look up each word's index in freq index and append
+                    for word in textcleaned:
+                        
+                        # Remember, test will build it's own word_index too
+                        idx = list(self.word_index).index(word)
+                        row.append(idx)
+                    
+                    # Append to x array (data)
+                    x.append(row)
+
+                    # Since article doesn't have whether it is hyperpartisan or not, let's get y_train afterwards
+                    print("article.items()= ", article.items())
+                    #y.append(article.items())
                 self.counter += 1
-                #handleArticle(self.lxmlhandler.etree.getroot(), self.outFile, self.data)
                 self.lxmlhandler = "undefined"
 
 def create_word_index(inputDataset, max_articles=sys.maxsize):
@@ -192,12 +222,47 @@ def create_word_index(inputDataset, max_articles=sys.maxsize):
     f.close()
     print("The word counts have been written to the output file in descending order.")
 
+def main(inputDataset, outFile, max_articles, tr_word_index_created):
+    # Give a True/False if word_index is created (from cmdline)
+    print("tr_word_index_created= ", tr_word_index_created)
+    if not tr_word_index_created:
+        create_word_index(inputDataset, max_articles)
+
+    with open('data.json', 'r') as f:
+        word_index = {}
+        word_index = json.load(f)
+        f.close()
+
+    # Start with python lists, then convert to numpy when finished for better runtime
+    x_train = []
+    y_train = []
+
+    # Populate x_train
+    for file in os.listdir(inputDataset):
+        if file.endswith('.xml'):
+            with open(inputDataset + "/" + file) as inputRunFile:
+                try:
+                    xml.sax.parse(  inputRunFile, 
+                                    HyperpartisanNewsTFExtractor(
+                                        mode="x",
+                                        word_index=word_index,
+                                        data=(x_train, y_train),
+                                        max_articles=max_articles))
+                except Exception as e:
+                    print(e)
+                    break
+
+    # Populate y_train
+
+    # Create test_word_index
+
+    # Get test data => x_test, y_test
+    x_test = []
+    y_test = []
 
 ########## MAIN ##########
-def main(inputDataset, outputFile, max_articles=sys.maxsize):
-    print("inputDataset= ", inputDataset)
-    print("outputFile= ", outputFile)
-    print("max_articles= ", max_articles)
+def old_main(inputDataset, outputFile, max_articles=sys.maxsize):
+
     with open('data.json', 'w') as f:
         data = {}
         json.dump(data,f)
@@ -208,7 +273,7 @@ def main(inputDataset, outputFile, max_articles=sys.maxsize):
             if file.endswith(".xml"):
                 with open(inputDataset + "/" + file) as inputRunFile:
                     try:
-                        xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(outFile, data, max_articles))
+                        xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(mode="x",outFile=outFile, data=data, max_articles=max_articles))
                     except Exception as e:
                         print(e)
                         break
@@ -221,4 +286,3 @@ def main(inputDataset, outputFile, max_articles=sys.maxsize):
 
 if __name__ == '__main__':
     main(*parse_options())
-

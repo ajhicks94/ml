@@ -52,8 +52,10 @@ def load_data(path='imdb.npz', num_words=None, skip_top=0,
         x_train, labels_train = f['x_train'], f['y_train']
         x_test, labels_test = f['x_test'], f['y_test']
     print(type(x_train))
-    print("\n\n\ninitial x_train = ", x_train)
-    return x_train
+    print(type(labels_train))
+    #print("\n\n\ninitial x_train = ", x_train)
+    #print("initial y_train= ", labels_train)
+    return (labels_train)
     np.random.seed(seed)
     indices = np.arange(len(x_train))
     np.random.shuffle(indices)
