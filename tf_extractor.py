@@ -32,13 +32,14 @@ from keras.datasets import imdb
 def parse_options():
     """Parses the command line options."""
     try:
-        long_options = ["inputDataset=", "outputFile=", "max_size=", "training_widx"]
-        opts, _ = getopt.getopt(sys.argv[1:], "d:o:n:w", long_options)
+        long_options = ["inputDataset=", "label_dir=", "outputFile=", "max_size=", "training_widx"]
+        opts, _ = getopt.getopt(sys.argv[1:], "d:l:o:n:w", long_options)
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
 
     inputDataset = "undefined"
+    label_dir = "undefined"
     outputFile = "undefined"
     max_size = sys.maxsize
     training_widx = False
@@ -46,6 +47,8 @@ def parse_options():
     for opt, arg in opts:
         if opt in ("-d", "--inputDataset"):
             inputDataset = arg
+        elif opt in ("-l", "--labelDir"):
+            label_dir = arg
         elif opt in ("-o", "--outputFile"):
             outputFile = arg
         elif opt in "-n":
@@ -59,10 +62,14 @@ def parse_options():
     elif not os.path.exists(inputDataset):
         sys.exit("The input dataset folder does not exist (%s)." % inputDataset)
 
+    if label_dir == "undefined":
+        sys.exit("Label directory, the directory that contains the articles label datafile, is undefined. Use option -l or --labelDir.")
+    elif not os.path.exists(label_dir):
+        sys.exit("The label folder does not exist (%s)." % label_dir)
     if outputFile == "undefined":
         sys.exit("Output file, the file to which the vectors should be written, is undefined. Use option -o or --outputFile.")
 
-    return (inputDataset, outputFile, max_size, training_widx)
+    return (inputDataset, label_dir, outputFile, max_size, training_widx)
 
 def clean_and_count(article, data):
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
@@ -174,8 +181,7 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                     clean_and_count(self.lxmlhandler.etree.getroot(), self.data)
                 elif self.mode == "x":
                     article = self.lxmlhandler.etree.getroot()
-                    x = self.data[0]
-                    y = self.data[1]
+                    x = self.data
                     row = []
                     
                     # Get and clean text
@@ -195,9 +201,25 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                     # Append to x array (data)
                     x.append(row)
 
-                    # Since article doesn't have whether it is hyperpartisan or not, let's get y_train afterwards
-                    print("article.items()= ", article.items())
-                    #y.append(article.items())
+                    print(article.get("id") + " completed.")
+
+                    self.data = x
+                elif self.mode == "y":
+                    article = self.lxmlhandler.etree.getroot()
+                    y = self.data
+
+                    hp = article.get('hyperpartisan')
+
+                    if hp in ['true', 'True', 'TRUE']:
+                        y.append(1)
+                    elif hp in ['false', 'False', 'FALSE']:
+                        y.append(0)
+                    else:
+                        err = "Mislabeled or unlabeled data found: " + hp
+                        raise Exception(err)
+                    
+                    self.data = y
+
                 self.counter += 1
                 self.lxmlhandler = "undefined"
 
@@ -222,7 +244,7 @@ def create_word_index(inputDataset, max_articles=sys.maxsize):
     f.close()
     print("The word counts have been written to the output file in descending order.")
 
-def main(inputDataset, outFile, max_articles, tr_word_index_created):
+def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
     # Give a True/False if word_index is created (from cmdline)
     print("tr_word_index_created= ", tr_word_index_created)
     if not tr_word_index_created:
@@ -237,7 +259,7 @@ def main(inputDataset, outFile, max_articles, tr_word_index_created):
     x_train = []
     y_train = []
 
-    # Populate x_train
+    # Populate x_train (TODO: PUT IN FUNCTION)
     for file in os.listdir(inputDataset):
         if file.endswith('.xml'):
             with open(inputDataset + "/" + file) as inputRunFile:
@@ -246,14 +268,29 @@ def main(inputDataset, outFile, max_articles, tr_word_index_created):
                                     HyperpartisanNewsTFExtractor(
                                         mode="x",
                                         word_index=word_index,
-                                        data=(x_train, y_train),
+                                        data=x_train,
                                         max_articles=max_articles))
                 except Exception as e:
                     print(e)
                     break
 
-    # Populate y_train
+    #print("x_train after= ", x_train)
 
+    # Populate y_train
+    for file in os.listdir(label_dir):
+        if file.endswith('.xml'):
+            with open(label_dir + "/" + file) as labelFile:
+                try:
+                    xml.sax.parse(  labelFile,
+                                    HyperpartisanNewsTFExtractor(
+                                        mode="y",
+                                        data=y_train,
+                                        max_articles=max_articles))
+                except Exception as e:
+                    print(e)
+                    break
+
+    print("y_train after= ", y_train)
     # Create test_word_index
 
     # Get test data => x_test, y_test
