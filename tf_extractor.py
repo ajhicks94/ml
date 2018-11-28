@@ -12,7 +12,6 @@
 # Output is one article per line:
 # <article id> <token>:<count> <token>:<count> ...
 
-
 import json
 import os
 import getopt
@@ -40,6 +39,7 @@ def parse_options():
 
     inputDataset = "undefined"
     outputFile = "undefined"
+    max_size = sys.maxsize
 
     for opt, arg in opts:
         if opt in ("-d", "--inputDataset"):
@@ -60,7 +60,7 @@ def parse_options():
 
     return (inputDataset, outputFile, max_size)
 
-def create_word_index(article, data):
+def clean_and_count(article, data):
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
     textcleaned = re.sub('[^a-z ]', '', text.lower())
 
@@ -88,24 +88,7 @@ def handleArticle(article, outFile, data):
     #x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
     #vector = np.array([x_test.flatten()])
 
-    #with open(path) as f:
-    #    word_index = json.load(f)
-
-    # counting tokens
-    #with open('data.json') as data_file:
-        #print(data_file.errors)
-     #   data = json.load(data_file)
-     #   data_file.close()
-        #data['id'] = 12
-
-    #print(data)
-    #data['dab'] = 50
-
-
-    #print(type(data))
-        #outfile.write(str_)
-    #for x in ['1','2','3']:
-    #    if data[x]
+  
     for token in textcleaned.split():
         if token in data.keys():
             data[token] += 1
@@ -155,9 +138,10 @@ def handleArticle(article, outFile, data):
 
 ########## SAX FOR STREAM PARSING ##########
 class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
-    def __init__(self, outFile, data, max_articles):
+    def __init__(self, mode, data, max_articles, outFile=""):
         xml.sax.ContentHandler.__init__(self)
         self.outFile = outFile
+        self.mode = mode
         self.lxmlhandler = "undefined"
         self.data = data
         self.max_articles = int(max_articles)
@@ -165,7 +149,7 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
 
     def startElement(self, name, attrs):
         if self.counter == self.max_articles:
-            err = "\nMaximum of " + str(self.max_articles) + " articles has been reached."
+            err = "\nMaximum of " + str(self.counter) + " articles has been reached."
             raise Exception(err)
         if name != "articles":
             if name == "article":
@@ -181,15 +165,39 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
         if self.lxmlhandler != "undefined":
             self.lxmlhandler.endElement(name)
             if name == "article":
-                # pass to handleArticle function
-                create_word_index(self.lxmlhandler.etree.getroot(), self.data)
+                if self.mode == "widx":
+                    clean_and_count(self.lxmlhandler.etree.getroot(), self.data)
                 self.counter += 1
                 #handleArticle(self.lxmlhandler.etree.getroot(), self.outFile, self.data)
                 self.lxmlhandler = "undefined"
 
+def create_word_index(inputDataset, max_articles=sys.maxsize):
+    with open('data.json', 'w') as f:
+        data = {}
+        json.dump(data,f)
+        f.close()
+   
+    for file in os.listdir(inputDataset):
+        if file.endswith(".xml"):
+            with open(inputDataset + "/" + file) as inputRunFile:
+                try:
+                    xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(mode="widx", data=data, max_articles=max_articles))
+                except Exception as e:
+                    print(e)
+                    break
+
+    f = open('data.json', 'w+')
+    o = OrderedDict(Counter(data).most_common(len(data)))
+    json.dump(o, f)
+    f.close()
+    print("The word counts have been written to the output file in descending order.")
+
+
 ########## MAIN ##########
 def main(inputDataset, outputFile, max_articles=sys.maxsize):
-    """Main method of this module."""
+    print("inputDataset= ", inputDataset)
+    print("outputFile= ", outputFile)
+    print("max_articles= ", max_articles)
     with open('data.json', 'w') as f:
         data = {}
         json.dump(data,f)
@@ -209,7 +217,7 @@ def main(inputDataset, outputFile, max_articles=sys.maxsize):
     o = OrderedDict(Counter(data).most_common(len(data)))
     json.dump(o, f)
     f.close()
-    print("The vectors have been written to the output file.")
+    print("The word counts have been written to the output file in descending order.")
 
 if __name__ == '__main__':
     main(*parse_options())
