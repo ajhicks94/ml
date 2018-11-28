@@ -204,6 +204,7 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                     print(article.get("id") + " completed.")
 
                     self.data = x
+
                 elif self.mode == "y":
                     article = self.lxmlhandler.etree.getroot()
                     y = self.data
@@ -223,8 +224,9 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                 self.counter += 1
                 self.lxmlhandler = "undefined"
 
-def create_word_index(inputDataset, max_articles=sys.maxsize):
-    with open('data.json', 'w') as f:
+def create_word_index(inputDataset, mode, max_articles=sys.maxsize):
+    idx_file = mode + ".json"
+    with open(idx_file, 'w') as f:
         data = {}
         json.dump(data,f)
         f.close()
@@ -238,19 +240,35 @@ def create_word_index(inputDataset, max_articles=sys.maxsize):
                     print(e)
                     break
 
-    f = open('data.json', 'w+')
+    f = open(idx_file, 'w+')
     o = OrderedDict(Counter(data).most_common(len(data)))
     json.dump(o, f)
     f.close()
     print("The word counts have been written to the output file in descending order.")
 
+def get_data(directory, filetype, mode, data, max_articles, word_index={}):
+    for file in os.listdir(directory):
+        if file.endswith('.' + filetype):
+            with open(directory + "/" + file) as iFile:
+                try:
+                    xml.sax.parse(  iFile, 
+                                    HyperpartisanNewsTFExtractor(
+                                            mode=mode,
+                                            word_index=word_index,
+                                            data=data,
+                                            max_articles=max_articles))
+                except Exception as e:
+                    print(e)
+                    break
+
+
 def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
     # Give a True/False if word_index is created (from cmdline)
     print("tr_word_index_created= ", tr_word_index_created)
     if not tr_word_index_created:
-        create_word_index(inputDataset, max_articles)
+        create_word_index(inputDataset=inputDataset, mode="training", max_articles=max_articles)
 
-    with open('data.json', 'r') as f:
+    with open('training.json', 'r') as f:
         word_index = {}
         word_index = json.load(f)
         f.close()
@@ -259,24 +277,14 @@ def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
     x_train = []
     y_train = []
 
-    # Populate x_train (TODO: PUT IN FUNCTION)
-    for file in os.listdir(inputDataset):
-        if file.endswith('.xml'):
-            with open(inputDataset + "/" + file) as inputRunFile:
-                try:
-                    xml.sax.parse(  inputRunFile, 
-                                    HyperpartisanNewsTFExtractor(
-                                        mode="x",
-                                        word_index=word_index,
-                                        data=x_train,
-                                        max_articles=max_articles))
-                except Exception as e:
-                    print(e)
-                    break
-
+    # Populate x_train
+    get_data(directory=inputDataset, filetype='xml', mode="x", data=x_train, max_articles=max_articles, word_index=word_index)
+    
     #print("x_train after= ", x_train)
-
+    print((x_train[0]))
     # Populate y_train
+    get_data(directory=label_dir, filetype='xml', mode="y", data=y_train, max_articles=max_articles)
+    '''
     for file in os.listdir(label_dir):
         if file.endswith('.xml'):
             with open(label_dir + "/" + file) as labelFile:
@@ -289,13 +297,21 @@ def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
                 except Exception as e:
                     print(e)
                     break
-
-    print("y_train after= ", y_train)
+    '''
+    print(y_train)
     # Create test_word_index
+    # create_word_index(inputDataset=testDir, mode="test", max_articles=max_articles)
+
 
     # Get test data => x_test, y_test
     x_test = []
     y_test = []
+
+    # get_data(directory=testDir, filetype='xml', mode="x", data=x_test, max_articles=max_articles)
+
+    # Transform Data TODO: PUT IN FUNCTION
+    x_train = np.array(x_train)
+    y_train = np.array(y_train)
 
 ########## MAIN ##########
 def old_main(inputDataset, outputFile, max_articles=sys.maxsize):
