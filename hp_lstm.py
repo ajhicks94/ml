@@ -120,23 +120,6 @@ def load_data(path='imdb.npz', num_words=None, skip_top=0, maxlen=None, seed=113
     # Return tuple of training and tuple of test
     return (x_train, y_train), (x_test, y_test)
 
-
-def get_word_index(path='imdb_word_index.json'):
-    """Retrieves the dictionary mapping words to word indices.
-    # Arguments
-        path: where to cache the data (relative to `~/.keras/dataset`).
-    # Returns
-        The word index dictionary.
-    """
-    # Get_file just downloads a file from a URL
-    # it returns the path to the downloaded file
-    path = get_file(
-        path,
-        origin='https://s3.amazonaws.com/text-datasets/imdb_word_index.json',
-        file_hash='bfafd718b763782e994055a2d397834f')
-    with open(path) as f:
-        return json.load(f)
-
 if __name__ == "__main__":
     max_features = 20000
     # cut texts after this number of words (among top max_features most common words)

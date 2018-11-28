@@ -21,6 +21,8 @@ import lxml.sax
 import lxml.etree
 import re
 import numpy as np
+import time
+
 from collections import Counter, OrderedDict
 from array import array
 from keras.preprocessing import sequence
@@ -32,8 +34,8 @@ from keras.datasets import imdb
 def parse_options():
     """Parses the command line options."""
     try:
-        long_options = ["inputDataset=", "label_dir=", "outputFile=", "max_size=", "training_widx"]
-        opts, _ = getopt.getopt(sys.argv[1:], "d:l:o:n:w", long_options)
+        long_options = ["inputDataset=", "label_dir=", "outputFile=", "max_size="]
+        opts, _ = getopt.getopt(sys.argv[1:], "d:l:o:n:", long_options)
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
@@ -42,7 +44,6 @@ def parse_options():
     label_dir = "undefined"
     outputFile = "undefined"
     max_size = sys.maxsize
-    training_widx = False
 
     for opt, arg in opts:
         if opt in ("-d", "--inputDataset"):
@@ -53,8 +54,6 @@ def parse_options():
             outputFile = arg
         elif opt in "-n":
             max_size = arg
-        elif opt in "-w":
-            training_widx = arg
         else:
             assert False, "Unknown option."
     if inputDataset == "undefined":
@@ -69,7 +68,7 @@ def parse_options():
     if outputFile == "undefined":
         sys.exit("Output file, the file to which the vectors should be written, is undefined. Use option -o or --outputFile.")
 
-    return (inputDataset, label_dir, outputFile, max_size, training_widx)
+    return (inputDataset, label_dir, outputFile, max_size)
 
 def clean_and_count(article, data):
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
@@ -81,71 +80,16 @@ def clean_and_count(article, data):
         else:
             data[token] = 1
     
-    #print(article.get("id") + " completed.")
-
 ########## ARTICLE HANDLING ##########
 def handleArticle(article, outFile, data):
-    termfrequencies = {}
-
-    # get text from article
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
     textcleaned = re.sub('[^a-z ]', '', text.lower())
-
-    #maxlen = 2000
-    #word_index = imdb.get_word_index()
-    #words = set(text_to_word_sequence(textcleaned))
-    #x_test = [[word_index[w] for w in words if w in word_index]]
-    #print(x_test)
-    #x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
-    #vector = np.array([x_test.flatten()])
-
   
     for token in textcleaned.split():
         if token in data.keys():
             data[token] += 1
         else:
             data[token] = 1
-        #if token in termfrequencies:
-        #    termfrequencies[token] += 1
-        #else:
-        #    termfrequencies[token] = 1
-    #f = open('data.json', 'w+')
-    #json.dump(data, f)
-    #f.close()
-    #words = set(text_to_word_sequence(textcleaned))
-    #vocab_size = len(words)
-    #oh = one_hot(textcleaned, round(1.3*vocab_size))
-    #print('oh= \n\n', oh)
-    #res = hashing_trick(textcleaned, round(vocab_size*1.3), hash_function='md5')
-    #print(res)
-    #print(termfrequencies, '\n')
-    #terms = sorted(termfrequencies, key=termfrequencies.get, reverse=True)
-    #d = dict()
-    #for w in terms:
-    #    d[w] = termfrequencies[w]
-    #print('\n\n')
-    #print(d)
-    #print(textcleaned)
-    #termfrequencies = d
-    #wvec = []
-    #for token in textcleaned.split():
-    #    i = 1
-    #    for x in d.keys():
-    #        if x == token:
-    #            break
-    #        i +=1
-    #    wvec.append(i)
-
-    #print(wvec)
-    #sys.exit()
-    # writing counts: <article id> <token>:<count> <token>:<count> ...
-    #outFile.write(article.get("id"))
-    #for token, count in termfrequencies.items():
-     #   outFile.write(" " + str(token) + ":" + str(count))
-    #outFile.write("\n")
-    print(article.get("id") + " completed.")
-
-
 
 ########## SAX FOR STREAM PARSING ##########
 class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
@@ -195,14 +139,17 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                     for word in textcleaned:
                         
                         # Remember, test will build it's own word_index too
-                        idx = list(self.word_index).index(word)
+                        # This line is causing major slowdowns in runtime
+                        idx = self.word_index[word]
+                        # Let's just store the index along with the count
+                        #idx = list(self.word_index).index(word)
                         row.append(idx)
                     
                     # Append to x array (data)
                     x.append(row)
 
-                    print(article.get("id") + " completed.")
-
+                    #print(article.get("id") + " completed.")
+                    
                     self.data = x
 
                 elif self.mode == "y":
@@ -241,7 +188,17 @@ def create_word_index(inputDataset, mode, max_articles=sys.maxsize):
                     break
 
     f = open(idx_file, 'w+')
+
+    # Creates a sorted dictionary
+    # {'brown': 28, 'blue': 56, 'red': 24} => {'blue': 56, 'brown': 28, 'red': 24}
     o = OrderedDict(Counter(data).most_common(len(data)))
+
+    # Replaces dict value with its index
+    # {'blue': 56, 'brown': 28, 'red': 24} => {'blue': 0, 'brown': 1, 'red': 2}
+    # This decreases runtime DRAMATICALLY. For 100 articles, went from 25s => 0.5s
+    for w in enumerate(o):
+        o[w[1]] = w[0]
+
     json.dump(o, f)
     f.close()
     print("The word counts have been written to the output file in descending order.")
@@ -262,16 +219,21 @@ def get_data(directory, filetype, mode, data, max_articles, word_index={}):
                     break
 
 
-def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
+def main(inputDataset, label_dir, outFile, max_articles):
+    start = time.time()
     # Give a True/False if word_index is created (from cmdline)
-    print("tr_word_index_created= ", tr_word_index_created)
-    if not tr_word_index_created:
-        create_word_index(inputDataset=inputDataset, mode="training", max_articles=max_articles)
+    create_word_index(inputDataset=inputDataset, mode="training", max_articles=max_articles)
+    end = time.time()
+    print("Creating training word index took: ", end - start)
 
+    start = time.time()
     with open('training.json', 'r') as f:
         word_index = {}
         word_index = json.load(f)
         f.close()
+    end = time.time()
+    print("Loading word_index took: ", end - start)
+    start = time.time()
 
     # Start with python lists, then convert to numpy when finished for better runtime
     x_train = []
@@ -279,26 +241,16 @@ def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
 
     # Populate x_train
     get_data(directory=inputDataset, filetype='xml', mode="x", data=x_train, max_articles=max_articles, word_index=word_index)
+    end = time.time()
+    print("x_train took: ", end - start)
     
-    #print("x_train after= ", x_train)
-    #print((x_train[0]))
     # Populate y_train
+    start = time.time()
     get_data(directory=label_dir, filetype='xml', mode="y", data=y_train, max_articles=max_articles)
-    '''
-    for file in os.listdir(label_dir):
-        if file.endswith('.xml'):
-            with open(label_dir + "/" + file) as labelFile:
-                try:
-                    xml.sax.parse(  labelFile,
-                                    HyperpartisanNewsTFExtractor(
-                                        mode="y",
-                                        data=y_train,
-                                        max_articles=max_articles))
-                except Exception as e:
-                    print(e)
-                    break
-    '''
-    print(y_train)
+    end = time.time()
+    print("y_train took: ", end-start)
+
+    #print(y_train)
     # Create test_word_index
     # create_word_index(inputDataset=testDir, mode="test", max_articles=max_articles)
 
@@ -309,13 +261,15 @@ def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
     y_test = [1,1,1,0,1]
     y_test = np.array(y_test)
     # get_data(directory=testDir, filetype='xml', mode="x", data=x_test, max_articles=max_articles)
-
+    
     # Transform Data TODO: PUT IN FUNCTION
     x_train = np.array(x_train)
     y_train = np.array(y_train)
     print("len(x_train)= ", len(x_train))
     print("x_train.shape= ", x_train.shape)
     print("y_train.shape= ", y_train.shape)
+
+    start = time.time()
 
     _remove_long_seq = sequence._remove_long_seq
     seed = 113
@@ -390,31 +344,9 @@ def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
     x_train, y_train = np.array(xs[:idx]), np.array(ys[:idx])
     x_test, y_test = np.array(xs[idx:]), np.array(ys[idx:])
 
+    end = time.time()
+    #print("Data transformation took: ", end - start)
     # return (x_train, y_train), (x_test, y_test)
     
-########## MAIN ##########
-def old_main(inputDataset, outputFile, max_articles=sys.maxsize):
-
-    with open('data.json', 'w') as f:
-        data = {}
-        json.dump(data,f)
-        f.close()
-   
-    with open(outputFile, 'w') as outFile:
-        for file in os.listdir(inputDataset):
-            if file.endswith(".xml"):
-                with open(inputDataset + "/" + file) as inputRunFile:
-                    try:
-                        xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(mode="x",outFile=outFile, data=data, max_articles=max_articles))
-                    except Exception as e:
-                        print(e)
-                        break
-
-    f = open('data.json', 'w+')
-    o = OrderedDict(Counter(data).most_common(len(data)))
-    json.dump(o, f)
-    f.close()
-    print("The word counts have been written to the output file in descending order.")
-
 if __name__ == '__main__':
     main(*parse_options())

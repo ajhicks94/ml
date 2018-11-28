@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from keras_preprocessing import sequence
+
 import os
 import numpy as np
 import json
@@ -51,6 +53,9 @@ def load_data(path='imdb.npz', num_words=None, skip_top=0,
     with np.load(path) as f:
         x_train, labels_train = f['x_train'], f['y_train']
         x_test, labels_test = f['x_test'], f['y_test']
+
+    _remove_long_seq = sequence._remove_long_seq
+
     print(len(x_train))
     print(len(labels_train))
     print(len(x_test))
@@ -105,17 +110,3 @@ def load_data(path='imdb.npz', num_words=None, skip_top=0,
     x_test, y_test = np.array(xs[idx:]), np.array(labels[idx:])
 
     return (x_train, y_train), (x_test, y_test)
-
-def get_word_index(path='imdb_word_index.json'):
-    """Retrieves the dictionary mapping words to word indices.
-    # Arguments
-        path: where to cache the data (relative to `~/.keras/dataset`).
-    # Returns
-        The word index dictionary.
-    """
-    path = get_file(
-        path,
-        origin='https://s3.amazonaws.com/text-datasets/imdb_word_index.json',
-        file_hash='bfafd718b763782e994055a2d397834f')
-    with open(path) as f:
-        return json.load(f)
