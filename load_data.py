@@ -51,8 +51,14 @@ def load_data(path='imdb.npz', num_words=None, skip_top=0,
     with np.load(path) as f:
         x_train, labels_train = f['x_train'], f['y_train']
         x_test, labels_test = f['x_test'], f['y_test']
-    print(type(x_train))
-    print(type(labels_train))
+    print(len(x_train))
+    print(len(labels_train))
+    print(len(x_test))
+    print(len(labels_test))
+    print(x_train.shape)
+    print(labels_train.shape)
+    print(x_test.shape)
+    print(labels_test.shape)
     #print("\n\n\ninitial x_train = ", x_train)
     #print("initial y_train= ", labels_train)
     return (labels_train)

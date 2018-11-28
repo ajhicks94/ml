@@ -281,7 +281,7 @@ def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
     get_data(directory=inputDataset, filetype='xml', mode="x", data=x_train, max_articles=max_articles, word_index=word_index)
     
     #print("x_train after= ", x_train)
-    print((x_train[0]))
+    #print((x_train[0]))
     # Populate y_train
     get_data(directory=label_dir, filetype='xml', mode="y", data=y_train, max_articles=max_articles)
     '''
@@ -304,15 +304,94 @@ def main(inputDataset, label_dir, outFile, max_articles, tr_word_index_created):
 
 
     # Get test data => x_test, y_test
-    x_test = []
-    y_test = []
-
+    x_test = [[0, 89, 100, 201, 3, 240, 1],[1],[1],[1],[2]]
+    x_test = np.array(x_test)
+    y_test = [1,1,1,0,1]
+    y_test = np.array(y_test)
     # get_data(directory=testDir, filetype='xml', mode="x", data=x_test, max_articles=max_articles)
 
     # Transform Data TODO: PUT IN FUNCTION
     x_train = np.array(x_train)
     y_train = np.array(y_train)
+    print("len(x_train)= ", len(x_train))
+    print("x_train.shape= ", x_train.shape)
+    print("y_train.shape= ", y_train.shape)
 
+    _remove_long_seq = sequence._remove_long_seq
+    seed = 113
+    start_char = 1
+    index_from = 3
+    maxlen=None
+    num_words=None
+    oov_char=2
+    skip_top=0
+
+    # Makes random numbers predictable based on (seed)
+    np.random.seed(seed)
+
+    # Returns an array of evenly spaced values ranged [0, len(x_train))
+    # In english = it's getting an array of the indices of x_train
+    # E.G. if len(x_train) = 3, indices => [0,1,2]
+    indices = np.arange(len(x_train))
+
+    # Shuffles the contents of indices
+    np.random.shuffle(indices)
+
+    # Rearranges x_train to match ordering of indices
+    # x_train is normally x_train[0], x_train[1], x_train[2]
+    # if indices = [0,2,1], then x_train[indices] => x_train[0], x_train[2], x_train[1]
+    x_train = x_train[indices]
+    y_train = y_train[indices]
+
+    # Repeat above for the test set
+    indices = np.arange(len(x_test))
+    np.random.shuffle(indices)
+    x_test = x_test[indices]
+    y_test = y_test[indices]
+
+    print("x_test.shape= ", x_test.shape)
+
+    # Append test to train
+    xs = np.concatenate([x_train, x_test])
+    ys = np.concatenate([y_train, y_test])
+
+    if start_char is not None:
+        # Adds a start_char to the beginning of each sentence
+        xs = [[start_char] + [w + index_from for w in x] for x in xs]
+    elif index_from:
+        # Since the word_index is sotted by count, this omits the top (index_from) most frequent words
+        xs = [[w + index_from for w in x] for x in xs]
+
+    # Trims sentences down to maxlen
+    if maxlen:
+        xs, ys = _remove_long_seq(maxlen, xs, ys)
+        if not xs:
+            raise ValueError('After filtering for sequences shorter than maxlen=' +
+                             str(maxlen) + ', no sequence was kept. Increase maxlen.')
+
+    # Calculates the max val in xs
+    if not num_words:
+        num_words = max([max(x) for x in xs])
+
+    # By convention, use 2 as OOV word
+    # Reserve 'index_from' (3 by default) characters:
+    # 0 => padding, 1 => start, 2 => OOV
+    if oov_char is not None:
+        # If a word is OOV, replace it w/ 2
+        # Also remove any words that are < skip_top
+        xs = [[w if (skip_top <= w < num_words) else oov_char for w in x] for x in xs]
+    else:
+        # Only remove words that are < skip_top
+        xs = [[w for w in x if skip_top <= w < num_words] for x in xs]
+    
+    idx = len(x_train)
+
+    # Partition the newly preprocessed instances back into their respective arrays
+    x_train, y_train = np.array(xs[:idx]), np.array(ys[:idx])
+    x_test, y_test = np.array(xs[idx:]), np.array(ys[idx:])
+
+    # return (x_train, y_train), (x_test, y_test)
+    
 ########## MAIN ##########
 def old_main(inputDataset, outputFile, max_articles=sys.maxsize):
 
