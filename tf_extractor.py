@@ -4,7 +4,7 @@
 # Version: 2018-10-09
 
 # Parameters:
-# --x_train_dir=<directory>
+# --training_data=<directory>
 #   Directory that contains the articles XML file with the articles for which a prediction should be made.
 # --outputFile=<file>
 #   File to which the term frequency vectors will be written. Will be overwritten if it exists.
@@ -30,45 +30,78 @@ from keras.preprocessing.text import Tokenizer, one_hot
 from keras.preprocessing.text import hashing_trick, text_to_word_sequence
 from keras.datasets import imdb
 
+def print_usage(filename, message):
+    print(message)
+    print("Usage: python %s --training_data <DIR> --training_labels <DIR> --test_data <DIR> --test_labels <DIR>" % filename)
+    print ("Optional args:")
+    print ("-n <num>\tSpecify the maximum number of articles to use. Must be greater than 1.")
+    print ("-o <FILE>\tSpecify a file to print output to")
+
 ########## OPTIONS HANDLING ##########
 def parse_options():
     """Parses the command line options."""
     try:
-        long_options = ["x_train_dir=", "labelDir=", "outputFile=", "max_size="]
-        opts, _ = getopt.getopt(sys.argv[1:], "d:l:o:n:", long_options)
+        long_options = ["training_data=", "training_labels=", "test_data=", "test_labels=", "outputFile=", "max_size="]
+        opts, _ = getopt.getopt(sys.argv[1:], "trd:trl:ted:tel:o:n:", long_options)
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
 
-    x_train_dir = "undefined"
-    labelDir = "undefined"
+    training_data = "undefined"
+    training_labels = "undefined"
+    test_data = "undefined"
+    test_labels = "undefined"
     outputFile = "undefined"
     max_size = sys.maxsize
 
     for opt, arg in opts:
-        if opt in ("-d", "--x_train_dir"):
-            x_train_dir = arg
-        elif opt in ("-l", "--labelDir"):
-            labelDir = arg
+        if opt in ("-trd", "--training_data"):
+            training_data = arg
+        elif opt in ("-trl", "--training_labels"):
+            training_labels = arg
+        elif opt in ("-ted", "--test_data"):
+            test_data = arg
+        elif opt in ("-tel", "--test_labels"):
+            test_labels = arg
         elif opt in ("-o", "--outputFile"):
             outputFile = arg
         elif opt in "-n":
             max_size = arg
         else:
             assert False, "Unknown option."
-    if x_train_dir == "undefined":
-        sys.exit("Input dataset, the directory that contains the articles XML file, is undefined. Use option -d or --x_train_dir.")
-    elif not os.path.exists(x_train_dir):
-        sys.exit("The input dataset folder does not exist (%s)." % x_train_dir)
 
-    if labelDir == "undefined":
-        sys.exit("Label directory, the directory that contains the articles label datafile, is undefined. Use option -l or --labelDir.")
-    elif not os.path.exists(labelDir):
-        sys.exit("The label folder does not exist (%s)." % labelDir)
-    if outputFile == "undefined":
-        sys.exit("Output file, the file to which the vectors should be written, is undefined. Use option -o or --outputFile.")
+    if training_data == "undefined":
+        message = "training_data, the directory that contains the training articles XML file, is undefined."
+        print_usage(sys.argv[0], message)
+        sys.exit()
+    elif not os.path.exists(training_data):
+        sys.exit("The input dataset folder does not exist (%s)." % training_data)
 
-    return (x_train_dir, labelDir, outputFile, max_size)
+    if training_labels == "undefined":
+        message = "Label directory, the directory that contains the articles label datafile, is undefined. Use option -l or --training_labels."
+        print_usage(sys.argv[0], message)
+        sys.exit()
+    elif not os.path.exists(training_labels):
+        sys.exit("The label folder does not exist (%s)." % training_labels)
+    
+    if test_data == "undefined":
+        message = "Test data directory is undefined. Use --test_data option."
+        print(sys.argv[0], message)
+        sys.exit()
+    elif not os.path.exists(test_data):
+        sys.exit("The test data folder does not exist (%s)." % test_data)
+
+    if test_labels == "undefined":
+        message = "Test label directory is undefined. Use --test_labels option."
+        print(sys.argv[0], message)
+        sys.exit()
+    elif not os.path.exists(test_labels):
+        sys.exit("The test label folder does not exist (%s)." % test_labels)
+
+    if outputFile != "undefined" and not os.path.exists(outputFile):
+        sys.exit("The output folder does not exist (%s)." % outputFile)
+
+    return (training_data, training_labels, test_data, test_labels, outputFile, max_size)
 
 def clean_and_count(article, data):
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
@@ -217,7 +250,7 @@ def get_data(directory, filetype, mode, data, max_articles, word_index={}):
                     print(e, end='')
                     break
 
-def load_data(x_train_dir, labelDir, max_articles, num_words=None, skip_top=0, maxlen=None,
+def load_data(training_data, training_labels, test_data, test_labels, max_articles, num_words=None, skip_top=0, maxlen=None,
               seed=113, start_char=1, oov_char=2, index_from=3):
 
     with open('training.json', 'r') as f:
@@ -228,13 +261,18 @@ def load_data(x_train_dir, labelDir, max_articles, num_words=None, skip_top=0, m
     # Start with python lists, then convert to numpy when finished for better runtime
     x_train = []
     y_train = []
+    x_test = []
+    y_test = []
 
     # Populate x_train
-    get_data(directory=x_train_dir, filetype='xml', mode="x", data=x_train, max_articles=max_articles, word_index=word_index)
+    get_data(directory=training_data, filetype='xml', mode="x", data=x_train, max_articles=max_articles, word_index=word_index)
     
     # Populate y_train
-    get_data(directory=labelDir, filetype='xml', mode="y", data=y_train, max_articles=max_articles)
-    
+    get_data(directory=training_labels, filetype='xml', mode="y", data=y_train, max_articles=max_articles)
+
+    #get_data(directory=test_data, filetype='xml', mode='x', data=x_test, max_articles=max_articles, word_index=word_index)
+
+    #get_data(directory=test_labels, filetype='xml', mode='y', data=y_test, max_articles=max_articles)
     #print(y_train)
     # Create test_word_index
     # create_word_index(inputDir=testDir, mode="test", max_articles=max_articles)
@@ -321,20 +359,20 @@ def load_data(x_train_dir, labelDir, max_articles, num_words=None, skip_top=0, m
 
     return (x_train, y_train), (x_test, y_test)
 
-def main(x_train_dir, labelDir, outFile, max_articles):
+def main(training_data, training_labels, test_data, test_labels, outFile, max_articles):
     total_time = 0
 
     start = time.time()
     # Create word index for the training set
-    create_word_index(inputDir=x_train_dir, mode="training", max_articles=max_articles)
+    create_word_index(inputDir=training_data, mode="training", max_articles=max_articles)
     end = time.time()
 
     print("Creating training word index took: ", end - start)
     total_time = end - start
     
     start = time.time()
-    #
-    (x_train, y_train), (x_test, y_test) = load_data(x_train_dir, labelDir, max_articles)
+    
+    (x_train, y_train), (x_test, y_test) = load_data(training_data, training_labels, test_data, test_labels, max_articles)
     end = time.time()
 
     print("\n\nLoading and transforming data took: ", end - start)
