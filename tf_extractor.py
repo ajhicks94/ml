@@ -12,6 +12,8 @@
 # Output is one article per line:
 # <article id> <token>:<count> <token>:<count> ...
 
+from __future__ import print_function
+
 import json
 import os
 import getopt
@@ -29,12 +31,16 @@ from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer, one_hot
 from keras.preprocessing.text import hashing_trick, text_to_word_sequence
 from keras.datasets import imdb
+from keras.models import Sequential
+from keras.layers import Dense, Embedding
+from keras.layers import LSTM
 
 def print_usage(filename, message):
     print(message)
     print("Usage: python %s --training_data <DIR> --training_labels <DIR> --test_data <DIR> --test_labels <DIR>" % filename)
     print ("Optional args:")
-    print ("-n <num>\tSpecify the maximum number of articles to use. Must be greater than 1.")
+    print ("-n <num>\tSpecify the maximum number of training articles to use. Must be greater than 1.")
+    print ("-t <num>\tSpecify the maximum number of test articles to use. Must be greater than 1.")
     print ("-o <FILE>\tSpecify a file to print output to")
 
 ########## OPTIONS HANDLING ##########
@@ -42,7 +48,7 @@ def parse_options():
     """Parses the command line options."""
     try:
         long_options = ["training_data=", "training_labels=", "test_data=", "test_labels=", "outputFile=", "max_size="]
-        opts, _ = getopt.getopt(sys.argv[1:], "trd:trl:ted:tel:o:n:", long_options)
+        opts, _ = getopt.getopt(sys.argv[1:], "o:n:t:", long_options)
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
@@ -52,7 +58,8 @@ def parse_options():
     test_data = "undefined"
     test_labels = "undefined"
     outputFile = "undefined"
-    max_size = sys.maxsize
+    max_training_size = sys.maxsize
+    max_test_size = sys.maxsize
 
     for opt, arg in opts:
         if opt in ("-trd", "--training_data"):
@@ -66,7 +73,9 @@ def parse_options():
         elif opt in ("-o", "--outputFile"):
             outputFile = arg
         elif opt in "-n":
-            max_size = arg
+            max_training_size = arg
+        elif opt in "-t":
+            max_test_size = arg
         else:
             assert False, "Unknown option."
 
@@ -101,13 +110,17 @@ def parse_options():
     if outputFile != "undefined" and not os.path.exists(outputFile):
         sys.exit("The output folder does not exist (%s)." % outputFile)
 
-    return (training_data, training_labels, test_data, test_labels, outputFile, max_size)
+    return (training_data, training_labels, test_data, test_labels, outputFile, max_training_size, max_test_size)
 
 def clean_and_count(article, data):
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
     textcleaned = re.sub('[^a-z ]', '', text.lower())
 
     for token in textcleaned.split():
+        if token == 'attacked':
+            pass
+        elif token == 'donald':
+            pass
         if token in data.keys():
             data[token] += 1
         else:
@@ -124,6 +137,9 @@ def handleArticle(article, outFile, data):
         else:
             data[token] = 1
 
+class customException(Exception):
+    pass
+
 ########## SAX FOR STREAM PARSING ##########
 class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
     def __init__(self, mode, max_articles, word_index={}, data=[], outFile=""):
@@ -139,9 +155,9 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
     def startElement(self, name, attrs):
         if self.counter == self.max_articles:
             err = ''
-            if self.mode == 'y':
-                err = "\nMaximum of " + str(self.counter) + " articles has been reached."
-            raise Exception(err)
+            #if self.mode == 'y':
+                #err = "\nMaximum of " + str(self.counter) + " articles has been reached.\n"
+            raise customException(err)
         if name != "articles":
             if name == "article":
                 self.lxmlhandler = lxml.sax.ElementTreeContentHandler()
@@ -159,6 +175,7 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                 if self.mode == "widx":
                     clean_and_count(self.lxmlhandler.etree.getroot(), self.data)
                 elif self.mode == "x":
+
                     article = self.lxmlhandler.etree.getroot()
                     x = self.data
                     row = []
@@ -166,26 +183,24 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                     # Get and clean text
                     text = lxml.etree.tostring(article, encoding="unicode", method="text")
                     textcleaned = re.sub('[^a-z ]', '', text.lower())
-
+                    
                     # Split into sequence of words
                     textcleaned = textcleaned.split()
 
                     # Look up each word's index in freq index and append
                     for word in textcleaned:
-                        
-                        # Remember, test will build it's own word_index too
-                        # This line is causing major slowdowns in runtime
                         idx = self.word_index[word]
                         row.append(idx)
                     
                     # Append to sequence array
                     x.append(row)
 
-                    #print(article.get("id") + " completed.")
+                    #print("x: " + article.get("id") + " completed.")
                     self.data = x
 
                 elif self.mode == "y":
                     article = self.lxmlhandler.etree.getroot()
+
                     y = self.data
 
                     hp = article.get('hyperpartisan')
@@ -198,31 +213,37 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                         err = "Mislabeled or unlabeled data found: " + hp
                         raise Exception(err)
                     
+                    #print("y: " + article.get("id") + " completed.")
                     self.data = y
 
                 self.counter += 1
                 self.lxmlhandler = "undefined"
 
 def create_word_index(inputDir, mode, max_articles=sys.maxsize):
+
+    # Create a new file with a blank dictionary
+    # training.json
+    # test.json
     idx_file = mode + ".json"
     with open(idx_file, 'w') as f:
         data = {}
         json.dump(data,f)
         f.close()
    
+   # Retrieve dictionary of {"word": count}
+   # This is why the data must be in separate directories, may fix later on
     for file in os.listdir(inputDir):
         if file.endswith(".xml"):
             with open(inputDir + "/" + file) as inputRunFile:
                 try:
                     xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(mode="widx", data=data, max_articles=max_articles))
-                except Exception as e:
-                    print(e)
+                except customException as e:
+                    print(e, end='')
                     break
 
     f = open(idx_file, 'w+')
 
-    # Creates a sorted dictionary
-    # {'brown': 28, 'blue': 56, 'red': 24} => {'blue': 56, 'brown': 28, 'red': 24}
+    # Create a sorted dictionary
     o = OrderedDict(Counter(data).most_common(len(data)))
 
     # Replaces dict value with its index
@@ -231,11 +252,12 @@ def create_word_index(inputDir, mode, max_articles=sys.maxsize):
     for w in enumerate(o):
         o[w[1]] = w[0]
 
+    # Write dictionary to file
     json.dump(o, f)
     f.close()
-    #print("The word counts have been written to the output file in descending order.")
 
-def get_data(directory, filetype, mode, data, max_articles, word_index={}):
+# Reads in data files
+def get_data(directory, filetype, mode, data, max_articles=sys.maxsize, word_index={}):
     for file in os.listdir(directory):
         if file.endswith('.' + filetype):
             with open(directory + "/" + file) as iFile:
@@ -246,16 +268,23 @@ def get_data(directory, filetype, mode, data, max_articles, word_index={}):
                                             word_index=word_index,
                                             data=data,
                                             max_articles=max_articles))
-                except Exception as e:
-                    print(e, end='')
-                    break
+                except customException as e:
+                    if max_articles != sys.maxsize:
+                        print(e, end='')
+                        break
 
-def load_data(training_data, training_labels, test_data, test_labels, max_articles, num_words=None, skip_top=0, maxlen=None,
+# Loads data from xml files and transforms them for use with keras
+def load_data(training_data, training_labels, test_data, test_labels, max_training_articles, max_test_articles, num_words=None, skip_top=0, maxlen=None,
               seed=113, start_char=1, oov_char=2, index_from=3):
 
     with open('training.json', 'r') as f:
-        word_index = {}
-        word_index = json.load(f)
+        training_widx = {}
+        training_widx = json.load(f)
+        f.close()
+    f.close()
+    with open('test.json', 'r') as f:
+        test_widx = {}
+        test_widx = json.load(f)
         f.close()
 
     # Start with python lists, then convert to numpy when finished for better runtime
@@ -265,31 +294,33 @@ def load_data(training_data, training_labels, test_data, test_labels, max_articl
     y_test = []
 
     # Populate x_train
-    get_data(directory=training_data, filetype='xml', mode="x", data=x_train, max_articles=max_articles, word_index=word_index)
+    print("Populating x_train...")
+    get_data(directory=training_data, filetype='xml', mode="x", data=x_train, max_articles=max_training_articles, word_index=training_widx)
     
     # Populate y_train
-    get_data(directory=training_labels, filetype='xml', mode="y", data=y_train, max_articles=max_articles)
-
-    #get_data(directory=test_data, filetype='xml', mode='x', data=x_test, max_articles=max_articles, word_index=word_index)
-
-    #get_data(directory=test_labels, filetype='xml', mode='y', data=y_test, max_articles=max_articles)
-    #print(y_train)
-    # Create test_word_index
-    # create_word_index(inputDir=testDir, mode="test", max_articles=max_articles)
-
-    # Get test data => x_test, y_test
-    x_test = [[0, 89, 100, 201, 3, 240, 1],[1],[1],[1],[2]]
-    x_test = np.array(x_test)
-    y_test = [1,1,1,0,1]
-    y_test = np.array(y_test)
-    # get_data(directory=testDir, filetype='xml', mode="x", data=x_test, max_articles=max_articles)
+    print("Populating y_train...")
+    get_data(directory=training_labels, filetype='xml', mode="y", data=y_train, max_articles=max_training_articles)
     
+    # Populate x_test
+    print("Populating x_test...")
+    # TODO TRY WITH test data not same shape as training, possible?
+    get_data(directory=test_data, filetype='xml', mode='x', data=x_test, word_index=test_widx, max_articles=max_test_articles)
+    
+    # Populate y_test
+    print("Populating y_test...\n")
+    get_data(directory=test_labels, filetype='xml', mode='y', data=y_test, max_articles=max_test_articles)
+
     # Transform Data TODO: PUT IN FUNCTION
     x_train = np.array(x_train)
     y_train = np.array(y_train)
-    #print("len(x_train)= ", len(x_train))
-    #print("x_train.shape= ", x_train.shape)
-    #print("y_train.shape= ", y_train.shape)
+    
+    x_test = np.array(x_test)
+    y_test = np.array(y_test)
+    
+    print ("x_train.shape= ", x_train.shape)
+    print ("y_train.shape= ", y_train.shape)
+    print ("x_test.shape= ", x_test.shape)
+    print ("y_test.shape= ", y_test.shape)
 
     _remove_long_seq = sequence._remove_long_seq
 
@@ -359,25 +390,65 @@ def load_data(training_data, training_labels, test_data, test_labels, max_articl
 
     return (x_train, y_train), (x_test, y_test)
 
-def main(training_data, training_labels, test_data, test_labels, outFile, max_articles):
+def main(training_data, training_labels, test_data, test_labels, outFile, max_training_articles, max_test_articles):
+    max_features = 20000
+    maxlen = 80
+    batch_size = 32
     total_time = 0
 
     start = time.time()
-    # Create word index for the training set
-    create_word_index(inputDir=training_data, mode="training", max_articles=max_articles)
+
+    # Build training set word index
+    print("\nBuilding training word index...")
+    create_word_index(inputDir=training_data, mode="training", max_articles=max_training_articles)
     end = time.time()
 
-    print("Creating training word index took: ", end - start)
+    #print("Creating training word index took: ", end - start)
     total_time = end - start
     
+    # Build test set word index
+    print("Building test word index...\n")
+    # Is it creating the word index based on the training data and not the test data?
+    create_word_index(inputDir=test_data, mode="test", max_articles=max_test_articles)
     start = time.time()
     
-    (x_train, y_train), (x_test, y_test) = load_data(training_data, training_labels, test_data, test_labels, max_articles)
+    (x_train, y_train), (x_test, y_test) = load_data(training_data, training_labels, test_data, test_labels, max_training_articles, max_test_articles)
     end = time.time()
 
-    print("\n\nLoading and transforming data took: ", end - start)
+    #print("\n\nLoading and transforming data took: ", end - start)
     total_time += (end - start)
-    print("\nTotal elapsed time: %s for %s records" %(total_time, max_articles))
+    #print("\nTotal elapsed time: %s for %s records" %(total_time, max_articles))
+
+    # ML Stuff now
+    print(len(x_train), 'train sequences')
+    print(len(x_test), 'test sequences`')
+
+    print('Pad sequences (samples x time)')
+    x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
+    x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
+    print('x_train shape:', x_train.shape)
+    print('x_test shape:', x_test.shape)
+
+    print('Build model...')
+    model = Sequential()
+    model.add(Embedding(max_features, 128))
+    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
+    model.add(Dense(1, activation='sigmoid'))
+
+    # try using different optimizers and different optimizer configs
+    model.compile(loss='binary_crossentropy',
+                optimizer='adam',
+                metrics=['accuracy'])
+
+    print('Train...')
+    model.fit(x_train, y_train,
+            batch_size=batch_size,
+            epochs=5,
+            validation_data=(x_test, y_test))
+    score, acc = model.evaluate(x_test, y_test,
+                                batch_size=batch_size)
+    print('Test score:', score)
+    print('Test accuracy:', acc)
 
 if __name__ == '__main__':
     main(*parse_options())
