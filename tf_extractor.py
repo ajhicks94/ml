@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-"""Term frequency extractor for the PAN19 hyperpartisan news detection task"""
-# Version: 2018-10-09
-
 # Parameters:
 # --training_data=<directory>
 #   Directory that contains the articles XML file with the articles for which a prediction should be made.
@@ -117,10 +114,6 @@ def clean_and_count(article, data):
     textcleaned = re.sub('[^a-z ]', '', text.lower())
 
     for token in textcleaned.split():
-        if token == 'attacked':
-            pass
-        elif token == 'donald':
-            pass
         if token in data.keys():
             data[token] += 1
         else:
@@ -217,6 +210,7 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                     self.data = y
 
                 self.counter += 1
+                #print("Count= ", self.counter)
                 self.lxmlhandler = "undefined"
 
 def create_word_index(inputDir, mode, max_articles=sys.maxsize):
@@ -281,12 +275,14 @@ def load_data(training_data, training_labels, test_data, test_labels, max_traini
         training_widx = {}
         training_widx = json.load(f)
         f.close()
-    f.close()
+
     with open('test.json', 'r') as f:
         test_widx = {}
         test_widx = json.load(f)
         f.close()
 
+    print('len(training_widx)= ', len(training_widx))
+    print('len(test_widx)= ', len(test_widx))
     # Start with python lists, then convert to numpy when finished for better runtime
     x_train = []
     y_train = []
@@ -321,7 +317,7 @@ def load_data(training_data, training_labels, test_data, test_labels, max_traini
     print ("y_train.shape= ", y_train.shape)
     print ("x_test.shape= ", x_test.shape)
     print ("y_test.shape= ", y_test.shape)
-
+    return
     _remove_long_seq = sequence._remove_long_seq
 
     # Makes random numbers predictable based on (seed)
@@ -357,7 +353,7 @@ def load_data(training_data, training_labels, test_data, test_labels, max_traini
         # Adds a start_char to the beginning of each sentence
         xs = [[start_char] + [w + index_from for w in x] for x in xs]
     elif index_from:
-        # Since the word_index is sotted by count, this omits the top (index_from) most frequent words
+        # Since the word_index is sorted by count, this omits the top (index_from) most frequent words
         xs = [[w + index_from for w in x] for x in xs]
 
     # Trims sentences down to maxlen
@@ -391,11 +387,11 @@ def load_data(training_data, training_labels, test_data, test_labels, max_traini
     return (x_train, y_train), (x_test, y_test)
 
 def main(training_data, training_labels, test_data, test_labels, outFile, max_training_articles, max_test_articles):
-    max_features = 20000
-    maxlen = 80
-    batch_size = 32
+    max_features = 13000 #default 20000
+    maxlen = 200 #default 80
+    batch_size = 50 #default 32
     total_time = 0
-
+    epochs = 100 #default 15
     start = time.time()
 
     # Build training set word index
@@ -412,12 +408,13 @@ def main(training_data, training_labels, test_data, test_labels, outFile, max_tr
     create_word_index(inputDir=test_data, mode="test", max_articles=max_test_articles)
     start = time.time()
     
-    (x_train, y_train), (x_test, y_test) = load_data(training_data, training_labels, test_data, test_labels, max_training_articles, max_test_articles)
+    (x_train, y_train), (x_test, y_test) = load_data(training_data, training_labels, test_data, test_labels, max_training_articles, max_test_articles
+                                                     )#index_from=15)
     end = time.time()
-
+    return
     #print("\n\nLoading and transforming data took: ", end - start)
     total_time += (end - start)
-    #print("\nTotal elapsed time: %s for %s records" %(total_time, max_articles))
+    #print("\nTotal elapsed time: %s for %s records" %(total_time, max_artiles))
 
     # ML Stuff now
     print(len(x_train), 'train sequences')
@@ -432,6 +429,7 @@ def main(training_data, training_labels, test_data, test_labels, outFile, max_tr
     print('Build model...')
     model = Sequential()
     model.add(Embedding(max_features, 128))
+    # Dropout = ???
     model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
     model.add(Dense(1, activation='sigmoid'))
 
@@ -443,8 +441,10 @@ def main(training_data, training_labels, test_data, test_labels, outFile, max_tr
     print('Train...')
     model.fit(x_train, y_train,
             batch_size=batch_size,
-            epochs=5,
-            validation_data=(x_test, y_test))
+            epochs=epochs,
+            # Use validation_split = 0.2 instead of validating on the test set and then evaluating on the test set
+            validation_split=0.2)
+            #validation_data=(x_test, y_test))
     score, acc = model.evaluate(x_test, y_test,
                                 batch_size=batch_size)
     print('Test score:', score)
