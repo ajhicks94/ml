@@ -304,7 +304,7 @@ def load_data(training_data, training_labels, test_data, test_labels, max_traini
     print ("y_train.shape= ", y_train.shape)
     print ("x_test.shape= ", x_test.shape)
     print ("y_test.shape= ", y_test.shape)
-    return
+    
     _remove_long_seq = sequence._remove_long_seq
 
     # Makes random numbers predictable based on (seed)
