@@ -1,0 +1,8 @@
+len(training_widx)= 1594082
+len(test_widx)= 668136
+
+training_articles = 600000 (GT match)
+validation_articles = 150000 (GT match)
+
+Include the data byarticle??
+    - I'm assuming that's where the last 250000 articles are
