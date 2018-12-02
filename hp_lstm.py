@@ -398,7 +398,7 @@ def main(training_data, training_labels, test_data, test_labels, outFile, max_tr
     (x_train, y_train), (x_test, y_test) = load_data(training_data, training_labels, test_data, test_labels, max_training_articles, max_test_articles
                                                      )#index_from=15)
     end = time.time()
-    return
+    
     #print("\n\nLoading and transforming data took: ", end - start)
     total_time += (end - start)
     #print("\nTotal elapsed time: %s for %s records" %(total_time, max_artiles))
