@@ -340,7 +340,7 @@ def load_data(training_data, training_labels, test_data, test_labels, max_traini
         # Adds a start_char to the beginning of each sentence
         xs = [[start_char] + [w + index_from for w in x] for x in xs]
     elif index_from:
-        # Since the word_index is sorted by count, this omits the top (index_from) most frequent words
+        # This shifts the indexes by index_from
         xs = [[w + index_from for w in x] for x in xs]
 
     # Trims sentences down to maxlen
@@ -359,10 +359,10 @@ def load_data(training_data, training_labels, test_data, test_labels, max_traini
     # 0 => padding, 1 => start, 2 => OOV
     if oov_char is not None:
         # If a word is OOV, replace it w/ 2
-        # Also remove any words that are < skip_top
+        # Also remove any words that are < skip_top or > num_words
         xs = [[w if (skip_top <= w < num_words) else oov_char for w in x] for x in xs]
     else:
-        # Only remove words that are < skip_top
+        # Only remove words that are < skip_top or > num_words
         xs = [[w for w in x if skip_top <= w < num_words] for x in xs]
     
     idx = len(x_train)
@@ -374,35 +374,25 @@ def load_data(training_data, training_labels, test_data, test_labels, max_traini
     return (x_train, y_train), (x_test, y_test)
 
 def main(training_data, training_labels, test_data, test_labels, outFile, max_training_articles, max_test_articles):
-    max_features = 13000 #default 20000
-    maxlen = 200 #default 80
-    batch_size = 50 #default 32
-    total_time = 0
-    epochs = 100 #default 15
-    start = time.time()
+    max_features = 20000        # Word Embedding                                 #default 20000
+    skip_top = 30                # Skip the most common words                     #default 0
+    num_words = 500             # Upper limit for word commonality               #default 0
+    maxlen = 80                 # Maximum length of a sequence (sentence)        #default 80
+    batch_size = 50             # Number of instances before updating weights    #default 32
+    epochs = 50                 # Number of epochs                               #default 15
 
     # Build training set word index
     print("\nBuilding training word index...")
     create_word_index(inputDir=training_data, mode="training", max_articles=max_training_articles)
-    end = time.time()
-
-    #print("Creating training word index took: ", end - start)
-    total_time = end - start
     
     # Build test set word index
     print("Building test word index...\n")
     # Is it creating the word index based on the training data and not the test data?
     create_word_index(inputDir=test_data, mode="test", max_articles=max_test_articles)
-    start = time.time()
     
-    (x_train, y_train), (x_test, y_test) = load_data(training_data, training_labels, test_data, test_labels, max_training_articles, max_test_articles
-                                                     )#index_from=15)
-    end = time.time()
+    (x_train, y_train), (x_test, y_test) = load_data(training_data, training_labels, test_data, test_labels, max_training_articles, max_test_articles,
+                                                     skip_top=skip_top, num_words=num_words, maxlen=None)
     
-    #print("\n\nLoading and transforming data took: ", end - start)
-    total_time += (end - start)
-    #print("\nTotal elapsed time: %s for %s records" %(total_time, max_artiles))
-
     # ML Stuff now
     print(len(x_train), 'train sequences')
     print(len(x_test), 'test sequences`')
@@ -416,8 +406,7 @@ def main(training_data, training_labels, test_data, test_labels, outFile, max_tr
     print('Build model...')
     model = Sequential()
     model.add(Embedding(max_features, 128))
-    # Dropout = ???
-    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
+    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2, go_backwards=True))
     model.add(Dense(1, activation='sigmoid'))
 
     # try using different optimizers and different optimizer configs
