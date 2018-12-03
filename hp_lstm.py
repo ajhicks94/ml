@@ -34,9 +34,10 @@ from keras.layers import LSTM
 
 def print_usage(filename, message):
     print(message)
-    print("Usage: python %s --training_data <file> --training_labels <file> --test_data <file> --test_labels <file>" % filename)
+    print("Usage: python %s --training_data <file> --training_labels <file> --validation_data <file> --validation_labels <file> --test_data <file> --test_labels <file>" % filename)
     print ("Optional args:")
     print ("-n <num>\tSpecify the maximum number of training articles to use. Must be greater than 1.")
+    print ("-v <num>\tSpecify the maximum number of validation articles to use. Must be greater than 1.")
     print ("-t <num>\tSpecify the maximum number of test articles to use. Must be greater than 1.")
     print ("-o <FILE>\tSpecify a file to print output to")
 
@@ -44,18 +45,21 @@ def print_usage(filename, message):
 def parse_options():
     """Parses the command line options."""
     try:
-        long_options = ["training_data=", "training_labels=", "test_data=", "test_labels=", "outputFile=", "max_size="]
-        opts, _ = getopt.getopt(sys.argv[1:], "o:n:t:", long_options)
+        long_options = ["training_data=", "training_labels=", "validation_data=", "validation_labels=", "test_data=", "test_labels=", "outputFile=", "max_size="]
+        opts, _ = getopt.getopt(sys.argv[1:], "o:n:v:t:", long_options)
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
 
     training_data = "undefined"
     training_labels = "undefined"
+    validation_data = "undefined"
+    validation_labels = "undefined"
     test_data = "undefined"
     test_labels = "undefined"
     outputFile = "undefined"
     max_training_size = sys.maxsize
+    max_validation_size = sys.maxsize
     max_test_size = sys.maxsize
 
     for opt, arg in opts:
@@ -63,6 +67,10 @@ def parse_options():
             training_data = arg
         elif opt in ("-trl", "--training_labels"):
             training_labels = arg
+        elif opt in ("-vd", "--validation_data"):
+            validation_data = arg
+        elif opt in ("-vl", "--validation_labels"):
+            validation_labels = arg
         elif opt in ("-ted", "--test_data"):
             test_data = arg
         elif opt in ("-tel", "--test_labels"):
@@ -71,6 +79,8 @@ def parse_options():
             outputFile = arg
         elif opt in "-n":
             max_training_size = arg
+        elif opt in "-v":
+            max_validation_size = arg
         elif opt in "-t":
             max_test_size = arg
         else:
@@ -90,6 +100,20 @@ def parse_options():
     elif not os.path.exists(training_labels):
         sys.exit("The label folder does not exist (%s)." % training_labels)
     
+    if validation_data == "undefined":
+        message = "validation_data is undefined"
+        print_usage(sys.argv[0], message)
+        sys.exit()
+    elif not os.path.exists(validation_data):
+        sys.exit("the validation dataset file does not exist (%s)." % validation_data)
+
+    if validation_labels == "undefined":
+        message = "validation_labels is undefined"
+        print_usage(sys.argv[0], message)
+        sys.exit()
+    elif not os.path.exists(validation_labels):
+        sys.exit("the validation_labels file does not exist (%s)." % validation_labels)
+
     if test_data == "undefined":
         message = "Test data directory is undefined. Use --test_data option."
         print(sys.argv[0], message)
@@ -107,7 +131,7 @@ def parse_options():
     if outputFile != "undefined" and not os.path.exists(outputFile):
         sys.exit("The output folder does not exist (%s)." % outputFile)
 
-    return (training_data, training_labels, test_data, test_labels, outputFile, max_training_size, max_test_size)
+    return (training_data, training_labels, validation_data, validation_labels, test_data, test_labels, outputFile, max_training_size, max_validation_size, max_test_size)
 
 def clean_and_count(article, data):
     text = lxml.etree.tostring(article, encoding="unicode", method="text")
@@ -205,7 +229,7 @@ def create_word_index(inputFile, mode, max_articles=sys.maxsize):
     # Create a new file with a blank dictionary
     # training.json
     # test.json
-    idx_file = "Data/Word_Indexes/" + mode + ".json"
+    idx_file = "data/word_indexes/" + mode + ".json"
     with open(idx_file, 'w') as f:
         data = {}
         json.dump(data,f)
@@ -277,7 +301,8 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
 
     print('len(training_widx)= ', len(training_widx))
     print('len(validation_widx)= ', len(validation_widx))
-    print('len(test_widx)= ', len(test_widx))
+    print('len(test_widx)= ', len(test_widx), "\n")
+
     # Start with python lists, then convert to numpy when finished for better runtime
     x_train = []
     y_train = []
@@ -287,40 +312,38 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
     y_test = []
 
     # Populate x_train
-    print("Populating x_train...")
+    #print("Populating x_train...")
     get_data(filename=tr, filetype='xml', mode="x", data=x_train, max_articles=max_tr_articles, word_index=training_widx)
     
     # Populate y_train
-    print("Populating y_train...")
+    #print("Populating y_train...")
     get_data(filename=tr_labels, filetype='xml', mode="y", data=y_train, max_articles=max_tr_articles)
     
     # Populate x_val
-    print("Populating x_val...")
+    #print("Populating x_val...")
     get_data(filename=val, filetype='xml', mode="x", data=x_val, max_articles=max_val_articles, word_index=validation_widx)
     
     # Populate y_val
-    print("Populating y_val...")
+    #print("Populating y_val...")
     get_data(filename=val_labels, filetype='xml', mode="y", data=y_val, max_articles=max_val_articles)
-    
+
     # Populate x_test
-    print("Populating x_test...")
+    #print("Populating x_test...")
     get_data(filename=te, filetype='xml', mode='x', data=x_test, word_index=test_widx, max_articles=max_te_articles)
     
     # Populate y_test
-    print("Populating y_test...\n")
+    #print("Populating y_test...\n")
     get_data(filename=te_labels, filetype='xml', mode='y', data=y_test, max_articles=max_te_articles)
 
     # Transform Data TODO: PUT IN FUNCTION
     x_train = np.array(x_train)
     y_train = np.array(y_train)
     
+    x_val = np.array(x_val)
+    y_val = np.array(y_val)
+
     x_test = np.array(x_test)
     y_test = np.array(y_test)
-    
-    print ("x_train.shape= ", x_train.shape)
-    print ("y_train.shape= ", y_train.shape)
-    print ("x_test.shape= ", x_test.shape)
-    print ("y_test.shape= ", y_test.shape)
     
     _remove_long_seq = sequence._remove_long_seq
 
@@ -341,17 +364,21 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
     x_train = x_train[indices]
     y_train = y_train[indices]
 
+    # Repeat above for validation set
+    indices = np.arange(len(x_val))
+    np.random.shuffle(indices)
+    x_val = x_val[indices]
+    y_val = y_val[indices]
+
     # Repeat above for the test set
     indices = np.arange(len(x_test))
     np.random.shuffle(indices)
     x_test = x_test[indices]
     y_test = y_test[indices]
 
-    #print("x_test.shape= ", x_test.shape)
-
-    # Append test to train
-    xs = np.concatenate([x_train, x_test])
-    ys = np.concatenate([y_train, y_test])
+    # Append all datasets
+    xs = np.concatenate([x_train, x_val, x_test])
+    ys = np.concatenate([y_train, y_val, y_test])
 
     if start_char is not None:
         # Adds a start_char to the beginning of each sentence
@@ -382,28 +409,34 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
         # Only remove words that are < skip_top or > num_words
         xs = [[w for w in x if skip_top <= w < num_words] for x in xs]
     
-    idx = len(x_train)
+    train_idx = len(x_train)
+    val_idx = len(x_val)
 
     # Partition the newly preprocessed instances back into their respective arrays
-    x_train, y_train = np.array(xs[:idx]), np.array(ys[:idx])
-    x_test, y_test = np.array(xs[idx:]), np.array(ys[idx:])
+    x_train, y_train = np.array(xs[:train_idx]), np.array(ys[:train_idx])
+    x_val, y_val = np.array(xs[train_idx:(train_idx+val_idx)]), np.array(ys[train_idx:(train_idx+val_idx)])
+    x_test, y_test = np.array(xs[(train_idx+val_idx):]), np.array(ys[(train_idx+val_idx):])
 
-    return (x_train, y_train), (x_test, y_test)
+    return (x_train, y_train), (x_val, y_val), (x_test, y_test)
 
 def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles, max_val_articles, max_te_articles):
-    max_features = 20000        # Word Embedding                                 #default 20000
-    skip_top = 30               # Skip the most common words                     #default 0
-    num_words = 500             # Upper limit for word commonality               #default 0
-    maxlen = 80                 # Maximum length of a sequence (sentence)        #default 80
-    batch_size = 50             # Number of instances before updating weights    #default 32
-    epochs = 50                 # Number of epochs                               #default 15
+    with open('run.json', 'r') as j:
+        config = {}
+        config = json.load(j)
+
+    max_features = config['max_features']           # Word Embedding                                 #default 20000
+    skip_top = config['skip_top']                   # Skip the most common words                     #default 0
+    num_words = config['num_words']                 # Upper limit for word commonality               #default 0
+    maxlen = config['maxlen']                       # Maximum length of a sequence (sentence)        #default 80
+    batch_size = config['batch_size']               # Number of instances before updating weights    #default 32
+    epochs = config['epochs']                       # Number of epochs                               #default 15
 
     # Build training set word index
     print("\nBuilding training word index...")
     create_word_index(inputFile=tr, mode="training", max_articles=max_tr_articles)
     
     # Build validation set word index
-    print("Building validation word index...\n")
+    print("Building validation word index...")
     create_word_index(inputFile=val, mode="validation", max_articles=max_val_articles)
 
     # Build test set word index
@@ -411,18 +444,18 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
     # Is it creating the word index based on the training data and not the test data?
     create_word_index(inputFile=te, mode="test", max_articles=max_te_articles)
     
-    (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, te, te_labels, max_tr_articles, max_te_articles,
+    (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, max_val_articles, max_te_articles,
                                                      skip_top=skip_top, num_words=num_words, maxlen=None)
     
     # ML Stuff now
     print(len(x_train), 'train sequences')
-    print(len(x_test), 'test sequences`')
+    print(len(x_val), 'validation sequences')
+    print(len(x_test), 'test sequences\n')
 
-    print('Pad sequences (samples x time)')
+    print('Pad sequences (samples x time)\n')
     x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
+    x_val = sequence.pad_sequences(x_val, maxlen=maxlen)
     x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
-    print('x_train shape:', x_train.shape)
-    print('x_test shape:', x_test.shape)
 
     print('Build model...')
     model = Sequential()
@@ -435,17 +468,24 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
                 optimizer='adam',
                 metrics=['accuracy'])
 
-    print('Train...')
-    model.fit(x_train, y_train,
+    history = model.fit(x_train, y_train,
             batch_size=batch_size,
             epochs=epochs,
             # Use validation_split = 0.2 instead of validating on the test set and then evaluating on the test set
-            validation_split=0.2)
-            #validation_data=(x_test, y_test))
-    score, acc = model.evaluate(x_test, y_test,
-                                batch_size=batch_size)
-    print('Test score:', score)
-    print('Test accuracy:', acc)
+            #validation_split=0.2)
+            validation_data=(x_val, y_val))
+
+    history = history.history
+
+    print("val_loss:\t", history['val_loss'])
+    print("val_acc:\t", history['val_acc'])
+    print("loss:\t\t", history['loss'])
+    print("acc:\t\t", history['acc'])
+    #print("history = ", history.history)
+    #score, acc = model.evaluate(x_test, y_test,
+    #                            batch_size=batch_size)
+    #print('Test score:', score)
+    #print('Test accuracy:', acc)
 
 if __name__ == '__main__':
     main(*parse_options())
