@@ -8,7 +8,7 @@ def count(args):
         print("\nIncorrect num of parameters.")
         print("\nUsage: ")
         print("python " + args[0] + " <training> <validation> <test>")
-        sys.exit()
+        return
 
     count_articles_ex = "count(//article)"
     left_articles_ex = 'count(//article[@bias="left"])'
