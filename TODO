@@ -1,0 +1,19 @@
+len(training_widx)= 1594082
+len(test_widx)= 668136
+
+0. Save training, validation, and testing numpy arrays to file
+    - in load_data(), check if the files exist first. if not,
+    - then do computations, but this will save us even more time
+    - when conducting the experiments
+
+1. Ensure distribution during downsampling
+    - I've decided the easiest way to do this without reducing runtime dramatically
+    - is to store separate datasets and word indexes for the desired size of the run
+
+2. Use pre-loaded word embeddings
+    - Likely to get a performance increase
+
+3. Attempt to use Tokenizer for developing word indexes
+    - I actually improved my own method by using some preprocessing outside
+    - of the program and then removing unnecessary code inside. So I will not need
+    - to use Tokenizer

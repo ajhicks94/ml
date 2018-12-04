@@ -72,6 +72,11 @@ def write_trees(src, src_labels, dest, dest_labels, src_tree, src_label_tree, de
     dest_path = dest_prefix + dest_name + '.xml'
     dest_label_path = dest_prefix + dest_name + '_labels.xml'
 
+    src_path = src + '.new'
+    src_label_path = src_labels + '.new'
+    dest_path = dest# + '.new'
+    dest_label_path = dest_labels# + '.new'
+
     print("Writing new source file: " + src_path)
     print("Old source file: " + src)
     #with open(src_path, 'w') as f:

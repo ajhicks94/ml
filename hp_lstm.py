@@ -21,6 +21,7 @@ import lxml.etree
 import re
 import numpy as np
 import time
+import matplotlib.pyplot as plt
 
 from collections import Counter, OrderedDict
 from array import array
@@ -31,6 +32,7 @@ from keras.datasets import imdb
 from keras.models import Sequential
 from keras.layers import Dense, Embedding
 from keras.layers import LSTM
+#from gensim import KeyedVectors
 
 def print_usage(filename, message):
     print(message)
@@ -134,10 +136,10 @@ def parse_options():
     return (training_data, training_labels, validation_data, validation_labels, test_data, test_labels, outputFile, max_training_size, max_validation_size, max_test_size)
 
 def clean_and_count(article, data):
-    text = lxml.etree.tostring(article, encoding="unicode", method="text")
-    textcleaned = re.sub('[^a-z ]', '', text.lower())
+    #text = lxml.etree.tostring(article, encoding="unicode", method="text")
+    #textcleaned = re.sub('[^a-z ]', '', text.lower())
 
-    for token in textcleaned.split():
+    for token in article.text.split():
         if token in data.keys():
             data[token] += 1
         else:
@@ -146,8 +148,114 @@ def clean_and_count(article, data):
 class customException(Exception):
     pass
 
+def parse(datafile, labelfile, mode, max_articles, word_index={}, data=[], outFile=""):
+
+    count = 0
+    left_count = 0
+    right_count = 0
+    neutral_count = 0
+    max_articles = int(max_articles)
+
+    tree = lxml.etree.parse(datafile)
+    articles = tree.getroot().getchildren()
+
+    # If both are provided
+    # ie. The case of any data parsing, or word indexing
+    if datafile != "" and labelfile != "":
+        label_tree = lxml.etree.parse(labelfile)
+        labels = label_tree.getroot().getchildren()
+
+    # If only the datafile is provided
+    # ie. The case of training_labels.xml
+    elif labelfile == "":
+        labels = articles        
+
+    #print("max_articles= ", max_articles)
+    #print("len(articles)", len(articles))
+    #print("len(labels)", len(labels))
+    print("mode= ", mode)
+    for article, label in zip(articles, labels):
+        if mode == 'y':
+            print('max_articles=', max_articles)
+            print("\tMode = " + mode)
+            print("Total count:", count)
+            print("\tleft:\t\t", left_count)
+            print("\tright:\t\t", right_count)
+            print("\tneutral:\t", neutral_count)
+
+        # Once we've maintained our distribution, stop parsing
+        if (count == max_articles and 
+           left_count == max_articles/4 and 
+           right_count == max_articles/4 and 
+           neutral_count == max_articles/2):
+
+            print("\tMode = " + mode)
+            print("Total count:", count)
+            print("\tleft:\t\t", left_count)
+            print("\tright:\t\t", right_count)
+            print("\tneutral:\t", neutral_count)
+
+            return
+        else:
+            b = label.get('bias')
+            #print("bias=", b)
+            if left_count == max_articles/4 and b == 'left':
+                continue
+            elif right_count == max_articles/4 and b == 'right':
+                continue
+            elif neutral_count == max_articles/2 and b not in ['left', 'right']:
+                continue
+            else:
+                if b == 'left':
+                    left_count += 1
+                elif b == 'right':
+                    right_count += 1
+                else:
+                    neutral_count += 1
+
+                # Do stuff
+                if mode == 'widx':
+                    clean_and_count(article, data)
+                elif mode == "x":
+
+                    row = []
+                    
+                    # Split into sequence of words
+                    textcleaned = article.text.split()
+
+                    # Look up each word's index in freq index and append
+                    for word in textcleaned:
+                        idx = word_index[word]
+                        row.append(idx)
+                    
+                    # Append to sequence array
+                    data.append(row)
+
+                elif mode == "y":
+
+                    bias = article.get('bias')
+
+                    if (bias == 'left'):
+                        left_count += 1
+                    elif (bias == 'right'):
+                        right_count += 1
+                    else:
+                        neutral_count += 1
+
+                    hp = article.get('hyperpartisan')
+
+                    if hp in ['true', 'True', 'TRUE']:
+                        data.append(1)
+                    elif hp in ['false', 'False', 'FALSE']:
+                        data.append(0)
+                    else:
+                        err = "Mislabeled or unlabeled data found: " + hp
+                        raise Exception(err)
+
+                count += 1
+
 ########## SAX FOR STREAM PARSING ##########
-class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
+class HyperpartisanNewsParser(xml.sax.ContentHandler):
     def __init__(self, mode, max_articles, word_index={}, data=[], outFile=""):
         xml.sax.ContentHandler.__init__(self)
         self.outFile = outFile
@@ -157,10 +265,18 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
         self.word_index = word_index
         self.max_articles = int(max_articles)
         self.counter = 0
+        self.left_count = 0
+        self.right_count = 0
+        self.neutral_count = 0
 
     def startElement(self, name, attrs):
         if self.counter == self.max_articles:
             err = ''
+            if self.mode == 'y':
+                print("Total count:", self.counter)
+                print("\tleft:\t\t", self.left_count)
+                print("\tright:\t\t", self.right_count)
+                print("\tneutral:\t", self.neutral_count)
             raise customException(err)
         if name != "articles":
             if name == "article":
@@ -181,15 +297,16 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                 elif self.mode == "x":
 
                     article = self.lxmlhandler.etree.getroot()
-                    x = self.data
+
                     row = []
                     
                     # Get and clean text
-                    text = lxml.etree.tostring(article, encoding="unicode", method="text")
-                    textcleaned = re.sub('[^a-z ]', '', text.lower())
+                    #text = lxml.etree.tostring(article, encoding="unicode", method="text")
+                    #textcleaned = re.sub('[^a-z ]', '', text.lower())
                     
                     # Split into sequence of words
-                    textcleaned = textcleaned.split()
+                    #textcleaned = textcleaned.split()
+                    textcleaned = article.text.split()
 
                     # Look up each word's index in freq index and append
                     for word in textcleaned:
@@ -197,34 +314,34 @@ class HyperpartisanNewsTFExtractor(xml.sax.ContentHandler):
                         row.append(idx)
                     
                     # Append to sequence array
-                    x.append(row)
-
-                    #print("x: " + article.get("id") + " completed.")
-                    self.data = x
+                    self.data.append(row)
 
                 elif self.mode == "y":
                     article = self.lxmlhandler.etree.getroot()
 
-                    y = self.data
+                    bias = article.get('bias')
+
+                    if (bias == 'left'):
+                        self.left_count += 1
+                    elif (bias == 'right'):
+                        self.right_count += 1
+                    else:
+                        self.neutral_count += 1
 
                     hp = article.get('hyperpartisan')
 
                     if hp in ['true', 'True', 'TRUE']:
-                        y.append(1)
+                        self.data.append(1)
                     elif hp in ['false', 'False', 'FALSE']:
-                        y.append(0)
+                        self.data.append(0)
                     else:
                         err = "Mislabeled or unlabeled data found: " + hp
                         raise Exception(err)
                     
-                    #print("y: " + article.get("id") + " completed.")
-                    self.data = y
-
                 self.counter += 1
-                #print("Count= ", self.counter)
                 self.lxmlhandler = "undefined"
 
-def create_word_index(inputFile, mode, max_articles=sys.maxsize):
+def create_word_index(datafile, labelfile, mode, max_articles=sys.maxsize):
 
     # Create a new file with a blank dictionary
     # training.json
@@ -240,12 +357,16 @@ def create_word_index(inputFile, mode, max_articles=sys.maxsize):
     #for file in os.listdir(inputDir):
         #if file.endswith(".xml"):
             #with open(inputDir + "/" + file) as inputRunFile:
-    with open(inputFile) as inputRunFile:
-        try:
-            xml.sax.parse(inputRunFile, HyperpartisanNewsTFExtractor(mode="widx", data=data, max_articles=max_articles))
-        except customException as e:
-            print(e, end='')
+    #with open(datafile) as inputRunFile:
+        #try:
+            #xml.sax.parse(inputRunFile, HyperpartisanNewsParser(mode="widx", data=data, max_articles=max_articles))
+        #except customException as e:
+            #print(e, end='')
             #break
+    #try:
+    parse(datafile, labelfile, mode="widx", max_articles=max_articles, data=data)
+    #except Exception:
+    #    pass
 
     f = open(idx_file, 'w+')
 
@@ -263,14 +384,15 @@ def create_word_index(inputFile, mode, max_articles=sys.maxsize):
     f.close()
 
 # Reads in data files
-def get_data(filename, filetype, mode, data, max_articles=sys.maxsize, word_index={}):
+def get_data(filename, filetype, mode, data, labelfile="", max_articles=sys.maxsize, word_index={}):
     #for file in os.listdir(directory):
         #if file.endswith('.' + filetype):
             #with open(directory + "/" + file) as iFile:
+    '''
     with open(filename) as iFile:
         try:
             xml.sax.parse(  iFile, 
-                            HyperpartisanNewsTFExtractor(
+                            HyperpartisanNewsParser(
                                     mode=mode,
                                     word_index=word_index,
                                     data=data,
@@ -279,29 +401,45 @@ def get_data(filename, filetype, mode, data, max_articles=sys.maxsize, word_inde
             if max_articles != sys.maxsize:
                 print(e, end='')
                 return
+    '''      
+    #try:
+    parse(filename, labelfile, mode, 
+          max_articles=max_articles, word_index=word_index,
+          data=data)
+    #except Exception:
+    #    pass
 
 # Loads data from xml files and transforms them for use with keras
 def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, max_val_articles, max_te_articles, num_words=None, skip_top=0, maxlen=None,
               seed=113, start_char=1, oov_char=2, index_from=3):
 
+    start = time.time()
     with open('data/word_indexes/training.json', 'r') as f:
         training_widx = {}
         training_widx = json.load(f)
         f.close()
+    finish = time.time()
+    print("Loading training_widx took:", finish-start)
 
+    start = time.time()
     with open('data/word_indexes/validation.json', 'r') as f:
         validation_widx = {}
         validation_widx = json.load(f)
         f.close()
+    finish = time.time()
+    print("loading validation_widx took:", finish-start)
 
+    start = time.time()
     with open('data/word_indexes/test.json', 'r') as f:
         test_widx = {}
         test_widx = json.load(f)
         f.close()
+    finish = time.time()
+    print("Loading test_widx took:", finish-start)
 
     print('len(training_widx)= ', len(training_widx))
-    print('len(validation_widx)= ', len(validation_widx))
-    print('len(test_widx)= ', len(test_widx), "\n")
+    #print('len(validation_widx)= ', len(validation_widx))
+    #print('len(test_widx)= ', len(test_widx), "\n")
 
     # Start with python lists, then convert to numpy when finished for better runtime
     x_train = []
@@ -313,29 +451,47 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
 
     # Populate x_train
     #print("Populating x_train...")
-    get_data(filename=tr, filetype='xml', mode="x", data=x_train, max_articles=max_tr_articles, word_index=training_widx)
-    
+    start = time.time()
+    get_data(filename=tr, labelfile=tr_labels, filetype='xml', mode="x", data=x_train, max_articles=max_tr_articles, word_index=training_widx)
+    finish = time.time()
+    print("get_data(x_train) took:", finish-start)
+
     # Populate y_train
     #print("Populating y_train...")
+    start = time.time()
     get_data(filename=tr_labels, filetype='xml', mode="y", data=y_train, max_articles=max_tr_articles)
-    
+    finish = time.time()
+    print("get_data(y_train) took:", finish-start)
+
     # Populate x_val
     #print("Populating x_val...")
-    get_data(filename=val, filetype='xml', mode="x", data=x_val, max_articles=max_val_articles, word_index=validation_widx)
-    
+    start = time.time()
+    get_data(filename=val, labelfile=val_labels, filetype='xml', mode="x", data=x_val, max_articles=max_val_articles, word_index=validation_widx)
+    finish = time.time()
+    print("get_data(x_val) took:", finish-start)
+
     # Populate y_val
     #print("Populating y_val...")
+    start = time.time()
     get_data(filename=val_labels, filetype='xml', mode="y", data=y_val, max_articles=max_val_articles)
+    finish = time.time()
+    print("get_data(y_val) took:", finish-start)
 
     # Populate x_test
     #print("Populating x_test...")
-    get_data(filename=te, filetype='xml', mode='x', data=x_test, word_index=test_widx, max_articles=max_te_articles)
-    
+    start = time.time()
+    get_data(filename=te, labelfile=te_labels, filetype='xml', mode='x', data=x_test, word_index=test_widx, max_articles=max_te_articles)
+    finish = time.time()
+    print("get_data(x_test) took:", finish-start)
+
     # Populate y_test
     #print("Populating y_test...\n")
+    start = time.time()
     get_data(filename=te_labels, filetype='xml', mode='y', data=y_test, max_articles=max_te_articles)
+    finish = time.time()
+    print("get_data(y_test) took:", finish-start)
 
-    # Transform Data TODO: PUT IN FUNCTION
+    start = time.time()
     x_train = np.array(x_train)
     y_train = np.array(y_train)
     
@@ -376,31 +532,48 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
     x_test = x_test[indices]
     y_test = y_test[indices]
 
+    finish = time.time()
+    print("shuffling of data took:", finish-start)
+
     # Append all datasets
+    start = time.time()
     xs = np.concatenate([x_train, x_val, x_test])
     ys = np.concatenate([y_train, y_val, y_test])
+    finish = time.time()
+    print("concatenating data took:", finish-start)
 
+    start = time.time()
     if start_char is not None:
         # Adds a start_char to the beginning of each sentence
         xs = [[start_char] + [w + index_from for w in x] for x in xs]
     elif index_from:
         # This shifts the indexes by index_from
         xs = [[w + index_from for w in x] for x in xs]
+    finish = time.time()
+
+    print("start_char/index_from took:", finish-start)
 
     # Trims sentences down to maxlen
+    start = time.time()
     if maxlen:
         xs, ys = _remove_long_seq(maxlen, xs, ys)
         if not xs:
             raise ValueError('After filtering for sequences shorter than maxlen=' +
                              str(maxlen) + ', no sequence was kept. Increase maxlen.')
+    finish = time.time()
+    print("maxlen took:", finish-start)
 
     # Calculates the max val in xs
+    start = time.time()
     if not num_words:
         num_words = max([max(x) for x in xs])
+    finish = time.time()
+    print("num_words took:", finish-start)
 
     # By convention, use 2 as OOV word
     # Reserve 'index_from' (3 by default) characters:
     # 0 => padding, 1 => start, 2 => OOV
+    start = time.time()
     if oov_char is not None:
         # If a word is OOV, replace it w/ 2
         # Also remove any words that are < skip_top or > num_words
@@ -408,18 +581,43 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
     else:
         # Only remove words that are < skip_top or > num_words
         xs = [[w for w in x if skip_top <= w < num_words] for x in xs]
-    
+    finish = time.time()
+    print("skip_top/num_words/oov took:", finish-start)
+
     train_idx = len(x_train)
     val_idx = len(x_val)
 
+    start = time.time()
     # Partition the newly preprocessed instances back into their respective arrays
     x_train, y_train = np.array(xs[:train_idx]), np.array(ys[:train_idx])
     x_val, y_val = np.array(xs[train_idx:(train_idx+val_idx)]), np.array(ys[train_idx:(train_idx+val_idx)])
     x_test, y_test = np.array(xs[(train_idx+val_idx):]), np.array(ys[(train_idx+val_idx):])
-
+    finish = time.time()
+    print("partitioning took:", finish-start)
     return (x_train, y_train), (x_val, y_val), (x_test, y_test)
 
 def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles, max_val_articles, max_te_articles):
+    start = time.time()
+    # Build training set word index
+    print("\nBuilding training word index...")
+    create_word_index(datafile=tr, labelfile=tr_labels, mode="training", max_articles=max_tr_articles)
+    finish = time.time()
+    print("building training widx took:", finish - start)
+
+    start = time.time()
+    # Build validation set word index
+    print("Building validation word index...")
+    create_word_index(datafile=val, labelfile=val_labels, mode="validation", max_articles=max_val_articles)
+    finish = time.time()
+    print("building validation widx took:", finish-start)
+
+    start = time.time()
+    # Build test set word index
+    print("Building test word index...\n")
+    create_word_index(datafile=te, labelfile=te_labels, mode="test", max_articles=max_te_articles)
+    finish = time.time()
+    print('building test widx took:', finish-start)
+
     with open('run.json', 'r') as j:
         config = {}
         config = json.load(j)
@@ -428,24 +626,13 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
     skip_top = config['skip_top']                   # Skip the most common words                     #default 0
     num_words = config['num_words']                 # Upper limit for word commonality               #default 0
     maxlen = config['maxlen']                       # Maximum length of a sequence (sentence)        #default 80
-    batch_size = config['batch_size']               # Number of instances before updating weights    #default 32
-    epochs = config['epochs']                       # Number of epochs                               #default 15
 
-    # Build training set word index
-    print("\nBuilding training word index...")
-    create_word_index(inputFile=tr, mode="training", max_articles=max_tr_articles)
-    
-    # Build validation set word index
-    print("Building validation word index...")
-    create_word_index(inputFile=val, mode="validation", max_articles=max_val_articles)
-
-    # Build test set word index
-    print("Building test word index...\n")
-    # Is it creating the word index based on the training data and not the test data?
-    create_word_index(inputFile=te, mode="test", max_articles=max_te_articles)
-    
+    start = time.time()
+    # Load and preprocess data
     (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, max_val_articles, max_te_articles,
                                                      skip_top=skip_top, num_words=num_words, maxlen=None)
+    finish = time.time()
+    print("Load_data took:", finish-start)
     
     # ML Stuff now
     print(len(x_train), 'train sequences')
@@ -453,35 +640,105 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
     print(len(x_test), 'test sequences\n')
 
     print('Pad sequences (samples x time)\n')
+    start = time.time()
     x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
     x_val = sequence.pad_sequences(x_val, maxlen=maxlen)
     x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
+    finish = time.time()
+    print("padding took:", finish-start)
+
+    batch_size = config['batch_size']               # Number of instances before updating weights    #default 32
+    epochs = config['epochs']                       # Number of epochs                               #default 15
+
+    # If we don't want any of these optional args,
+    # we will have to remove them from the LSTM call itself
+    go_backwards = True if (config['go_backwards'] == "True") else False
+    dropout = config['dropout']
+    recurrent_dropout = config['recurrent_dropout']
+    bias_regularizer = config['bias_regularizer']
 
     print('Build model...')
-    model = Sequential()
-    model.add(Embedding(max_features, 128))
-    model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2, go_backwards=True))
-    model.add(Dense(1, activation='sigmoid'))
 
-    # try using different optimizers and different optimizer configs
+    # Unzip first
+    embedding_file = 'data/embeddings/GoogleNews-vectors-negative300.bin'
+    # Takes about 43 seconds to load
+    #embedding = KeyedVectors.load_word2vec_format(embedding_file, binary=True)
+    # embedding_index = {}
+    # f = open(embedding_file)
+    # for line in f:
+    #   values = line.split()
+    #   word = values[0]
+    #   coefs = np.asarray(values[1:], dtype='float32')
+    #   embeddings_index[word] = coefs
+    # f.close()
+
+    # embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
+    # for word, i in word_index.items():
+    #   embedding_vector = embeddings_index.get(word)
+    #   if embedding_vector is not None:
+    #       # words not found in embedding index will be all-zeroes.
+    #       embedding_matrix[i] = embedding_vector
+
+    model = Sequential()
+    start = time.time()
+    model.add(Embedding(max_features, 128))
+    finish = time.time()
+    print("adding embedding layer took:", finish-start)
+
+    start = time.time()
+    model.add(LSTM( 128, bias_regularizer = bias_regularizer, 
+                    dropout=dropout, recurrent_dropout=recurrent_dropout, 
+                    go_backwards=go_backwards))
+    finish = time.time()
+    print("adding LSTM layer took:", finish-start)
+
+    start = time.time()
+    model.add(Dense(1, activation='sigmoid'))
+    finish = time.time()
+    print("adding Dense sigmoid:", finish-start)
+
+    start = time.time()
     model.compile(loss='binary_crossentropy',
                 optimizer='adam',
                 metrics=['accuracy'])
+    finish = time.time()
+    print("Compiling model took:", finish-start)
 
+    print(model.summary())
+
+    start = time.time()
     history = model.fit(x_train, y_train,
             batch_size=batch_size,
             epochs=epochs,
             # Use validation_split = 0.2 instead of validating on the test set and then evaluating on the test set
             #validation_split=0.2)
-            validation_data=(x_val, y_val))
+            validation_data=(x_val, y_val),
+            verbose=1)
+    finish = time.time()
+    print("Fitting model took:", finish-start)
+    # Plot training & validation accuracy values
+    plt.plot(history.history['acc'])
+    plt.plot(history.history['val_acc'])
+    plt.title('Model accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Validation'], loc='upper left')
+    plt.show()
 
-    history = history.history
+    # Plot training & validation loss values
+    #plt.plot(history.history['loss'])
+    #plt.plot(history.history['val_loss'])
+    #plt.title('Model loss')
+    #plt.ylabel('Loss')
+    #plt.xlabel('Epoch')
+    #plt.legend(['Train', 'Validation'], loc='upper left')
+    #plt.show()
+    #print("val_loss:\t", history['val_loss'])
+    #print("val_acc:\t", history['val_acc'])
+    #print("loss:\t\t", history['loss'])
+    #print("acc:\t\t", history['acc'])
 
-    print("val_loss:\t", history['val_loss'])
-    print("val_acc:\t", history['val_acc'])
-    print("loss:\t\t", history['loss'])
-    print("acc:\t\t", history['acc'])
-    #print("history = ", history.history)
+    # DO NOT UNCOMMENT THIS
     #score, acc = model.evaluate(x_test, y_test,
     #                            batch_size=batch_size)
     #print('Test score:', score)
