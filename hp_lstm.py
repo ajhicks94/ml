@@ -11,27 +11,31 @@
 
 from __future__ import print_function
 
-import json
-import os
 import getopt
-import sys
-import xml.sax
-import lxml.sax
-import lxml.etree
+import json
+import codecs
+import os
 import re
-import numpy as np
+import sys
 import time
-import matplotlib.pyplot as plt
-
-from collections import Counter, OrderedDict
+import xml.sax
 from array import array
-from keras.preprocessing import sequence
-from keras.preprocessing.text import Tokenizer, one_hot
-from keras.preprocessing.text import hashing_trick, text_to_word_sequence
+from collections import Counter, OrderedDict
+from tqdm import tqdm
+
+import lxml.etree
+import lxml.sax
+import matplotlib.pyplot as plt
+import numpy as np
+
+from gensim.models.keyedvectors import KeyedVectors
 from keras.datasets import imdb
+from keras.layers import LSTM, Dense, Embedding
 from keras.models import Sequential
-from keras.layers import Dense, Embedding
-from keras.layers import LSTM
+from keras.preprocessing import sequence
+from keras.preprocessing.text import (Tokenizer, hashing_trick, one_hot,
+                                      text_to_word_sequence)
+
 #from gensim import KeyedVectors
 
 def print_usage(filename, message):
@@ -270,14 +274,14 @@ class HyperpartisanNewsParser(xml.sax.ContentHandler):
         self.neutral_count = 0
 
     def startElement(self, name, attrs):
-        if self.counter == self.max_articles:
-            err = ''
-            if self.mode == 'y':
-                print("Total count:", self.counter)
-                print("\tleft:\t\t", self.left_count)
-                print("\tright:\t\t", self.right_count)
-                print("\tneutral:\t", self.neutral_count)
-            raise customException(err)
+        #if self.counter == self.max_articles:
+            #err = ''
+            #if self.mode == 'y':
+            #    print("Total count:", self.counter)
+            #    print("\tleft:\t\t", self.left_count)
+            #    print("\tright:\t\t", self.right_count)
+            #    print("\tneutral:\t", self.neutral_count)
+            #raise customException(err)
         if name != "articles":
             if name == "article":
                 self.lxmlhandler = lxml.sax.ElementTreeContentHandler()
@@ -341,6 +345,14 @@ class HyperpartisanNewsParser(xml.sax.ContentHandler):
                 self.counter += 1
                 self.lxmlhandler = "undefined"
 
+    def endDocument(self):
+        print("Total articles parsed:", self.counter)
+        if self.mode == 'y':
+                print("Total count:", self.counter)
+                print("\tleft:\t\t", self.left_count)
+                print("\tright:\t\t", self.right_count)
+                print("\tneutral:\t", self.neutral_count)
+
 def create_word_index(datafile, labelfile, mode, max_articles=sys.maxsize):
 
     # Create a new file with a blank dictionary
@@ -357,14 +369,14 @@ def create_word_index(datafile, labelfile, mode, max_articles=sys.maxsize):
     #for file in os.listdir(inputDir):
         #if file.endswith(".xml"):
             #with open(inputDir + "/" + file) as inputRunFile:
-    #with open(datafile) as inputRunFile:
-        #try:
-            #xml.sax.parse(inputRunFile, HyperpartisanNewsParser(mode="widx", data=data, max_articles=max_articles))
-        #except customException as e:
-            #print(e, end='')
+    with open(datafile) as inputRunFile:
+        try:
+            xml.sax.parse(inputRunFile, HyperpartisanNewsParser(mode="widx", data=data, max_articles=max_articles))
+        except customException as e:
+            print(e, end='')
             #break
     #try:
-    parse(datafile, labelfile, mode="widx", max_articles=max_articles, data=data)
+    #parse(datafile, labelfile, mode="widx", max_articles=max_articles, data=data)
     #except Exception:
     #    pass
 
@@ -388,7 +400,7 @@ def get_data(filename, filetype, mode, data, labelfile="", max_articles=sys.maxs
     #for file in os.listdir(directory):
         #if file.endswith('.' + filetype):
             #with open(directory + "/" + file) as iFile:
-    '''
+    
     with open(filename) as iFile:
         try:
             xml.sax.parse(  iFile, 
@@ -408,6 +420,7 @@ def get_data(filename, filetype, mode, data, labelfile="", max_articles=sys.maxs
           data=data)
     #except Exception:
     #    pass
+    '''
 
 # Loads data from xml files and transforms them for use with keras
 def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, max_val_articles, max_te_articles, num_words=None, skip_top=0, maxlen=None,
@@ -491,6 +504,7 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
     finish = time.time()
     print("get_data(y_test) took:", finish-start)
 
+    print("Shuffling data...", end='')
     start = time.time()
     x_train = np.array(x_train)
     y_train = np.array(y_train)
@@ -533,15 +547,17 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
     y_test = y_test[indices]
 
     finish = time.time()
-    print("shuffling of data took:", finish-start)
+    print(finish-start)
 
     # Append all datasets
+    print("Concatenating...", end='')
     start = time.time()
     xs = np.concatenate([x_train, x_val, x_test])
     ys = np.concatenate([y_train, y_val, y_test])
     finish = time.time()
-    print("concatenating data took:", finish-start)
+    print(finish-start)
 
+    print("start_char/index_from...", end='')
     start = time.time()
     if start_char is not None:
         # Adds a start_char to the beginning of each sentence
@@ -550,10 +566,10 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
         # This shifts the indexes by index_from
         xs = [[w + index_from for w in x] for x in xs]
     finish = time.time()
-
-    print("start_char/index_from took:", finish-start)
+    print(finish-start)
 
     # Trims sentences down to maxlen
+    print("Maxlen...", end='')
     start = time.time()
     if maxlen:
         xs, ys = _remove_long_seq(maxlen, xs, ys)
@@ -561,18 +577,20 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
             raise ValueError('After filtering for sequences shorter than maxlen=' +
                              str(maxlen) + ', no sequence was kept. Increase maxlen.')
     finish = time.time()
-    print("maxlen took:", finish-start)
+    print(finish-start)
 
     # Calculates the max val in xs
+    print("Num_words = max...", end='')
     start = time.time()
     if not num_words:
         num_words = max([max(x) for x in xs])
     finish = time.time()
-    print("num_words took:", finish-start)
+    print(finish-start)
 
     # By convention, use 2 as OOV word
     # Reserve 'index_from' (3 by default) characters:
     # 0 => padding, 1 => start, 2 => OOV
+    print("Skip_top/num_words/oov...", end='')
     start = time.time()
     if oov_char is not None:
         # If a word is OOV, replace it w/ 2
@@ -582,19 +600,60 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, ma
         # Only remove words that are < skip_top or > num_words
         xs = [[w for w in x if skip_top <= w < num_words] for x in xs]
     finish = time.time()
-    print("skip_top/num_words/oov took:", finish-start)
+    print(finish-start)
 
     train_idx = len(x_train)
     val_idx = len(x_val)
 
+    print("Partitioning...", end='')
     start = time.time()
     # Partition the newly preprocessed instances back into their respective arrays
     x_train, y_train = np.array(xs[:train_idx]), np.array(ys[:train_idx])
     x_val, y_val = np.array(xs[train_idx:(train_idx+val_idx)]), np.array(ys[train_idx:(train_idx+val_idx)])
     x_test, y_test = np.array(xs[(train_idx+val_idx):]), np.array(ys[(train_idx+val_idx):])
     finish = time.time()
-    print("partitioning took:", finish-start)
+    print(finish-start)
     return (x_train, y_train), (x_val, y_val), (x_test, y_test)
+
+def get_pretrained_embeddings(tr_widx, embedding_file):
+
+    with open(tr_widx, 'r') as w:
+        word_index = {}
+        word_index = json.load(w)
+    
+    # First, read in the embedding_index
+    # Reference begin: https://blog.keras.io/using-pre-trained-word-embeddings-in-a-keras-model.html
+    EMBEDDING_DIM = 300
+
+    start = time.time()
+    # Takes about 50 seconds
+    embedding = KeyedVectors.load_word2vec_format(embedding_file, binary=True)
+    finish = time.time()
+    print("Loading word2vec embeddings took:", finish-start, "\n")
+    
+    start = time.time()
+
+    embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
+    with tqdm(total=len(word_index), unit='it', unit_scale=True, unit_divisor=1024) as pbar:
+        i = 0
+        unk_words = []
+        for word in word_index:
+            if word in embedding.wv.vocab:
+                embedding_vector = embedding.wv[word]
+                if embedding_vector is not None:
+                    embedding_matrix[i] = embedding_vector
+            else:
+                unk_words.append(word)
+            
+            pbar.update()
+            i += 1
+
+    print("Words not found:", len(unk_words))
+    finish = time.time()
+    print("Calculating embedding_matrix too:", finish-start)
+
+    return embedding_matrix
+    # Reference end
 
 def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles, max_val_articles, max_te_articles):
     start = time.time()
@@ -602,22 +661,23 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
     print("\nBuilding training word index...")
     create_word_index(datafile=tr, labelfile=tr_labels, mode="training", max_articles=max_tr_articles)
     finish = time.time()
-    print("building training widx took:", finish - start)
+    print("building training widx took:", finish - start, "\n")
 
     start = time.time()
     # Build validation set word index
     print("Building validation word index...")
     create_word_index(datafile=val, labelfile=val_labels, mode="validation", max_articles=max_val_articles)
     finish = time.time()
-    print("building validation widx took:", finish-start)
+    print("building validation widx took:", finish-start, "\n")
 
     start = time.time()
     # Build test set word index
     print("Building test word index...\n")
     create_word_index(datafile=te, labelfile=te_labels, mode="test", max_articles=max_te_articles)
     finish = time.time()
-    print('building test widx took:', finish-start)
+    print('building test widx took:', finish-start, "\n")
 
+    # Load configuration
     with open('run.json', 'r') as j:
         config = {}
         config = json.load(j)
@@ -632,20 +692,20 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
     (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, val, val_labels, te, te_labels, max_tr_articles, max_val_articles, max_te_articles,
                                                      skip_top=skip_top, num_words=num_words, maxlen=None)
     finish = time.time()
-    print("Load_data took:", finish-start)
+    print("Load_data took a total of:", finish-start)
     
     # ML Stuff now
     print(len(x_train), 'train sequences')
     print(len(x_val), 'validation sequences')
     print(len(x_test), 'test sequences\n')
 
-    print('Pad sequences (samples x time)\n')
+    print('Pad sequences (samples x time)...', end='')
     start = time.time()
     x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
     x_val = sequence.pad_sequences(x_val, maxlen=maxlen)
     x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
     finish = time.time()
-    print("padding took:", finish-start)
+    print(finish-start)
 
     batch_size = config['batch_size']               # Number of instances before updating weights    #default 32
     epochs = config['epochs']                       # Number of epochs                               #default 15
@@ -655,38 +715,36 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
     go_backwards = True if (config['go_backwards'] == "True") else False
     dropout = config['dropout']
     recurrent_dropout = config['recurrent_dropout']
-    bias_regularizer = config['bias_regularizer']
+    #bias_regularizer = config['bias_regularizer']
 
     print('Build model...')
 
-    # Unzip first
-    embedding_file = 'data/embeddings/GoogleNews-vectors-negative300.bin'
-    # Takes about 43 seconds to load
-    #embedding = KeyedVectors.load_word2vec_format(embedding_file, binary=True)
-    # embedding_index = {}
-    # f = open(embedding_file)
-    # for line in f:
-    #   values = line.split()
-    #   word = values[0]
-    #   coefs = np.asarray(values[1:], dtype='float32')
-    #   embeddings_index[word] = coefs
-    # f.close()
-
-    # embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
-    # for word, i in word_index.items():
-    #   embedding_vector = embeddings_index.get(word)
-    #   if embedding_vector is not None:
-    #       # words not found in embedding index will be all-zeroes.
-    #       embedding_matrix[i] = embedding_vector
+    # Obtain and compute embedding matrix
+    print("Get pretrained word embeddings...")
+    embedding_matrix = get_pretrained_embeddings(  'data/word_indexes/training.json',
+                                                    'data/embeddings/GoogleNews-vectors-negative300.bin')
 
     model = Sequential()
+
     start = time.time()
-    model.add(Embedding(max_features, 128))
+    #model.add(Embedding(max_features, 128))
+    
+    with open('data/word_indexes/training.json', 'r') as f:
+        word_index = {}
+        word_index = json.load(f)
+
+    EMBEDDING_DIM = 300
+    model.add(Embedding(len(word_index) + 1,
+                        EMBEDDING_DIM,
+                        weights=[embedding_matrix],
+                        input_length=maxlen,
+                        trainable=False))
+    
     finish = time.time()
     print("adding embedding layer took:", finish-start)
 
     start = time.time()
-    model.add(LSTM( 128, bias_regularizer = bias_regularizer, 
+    model.add(LSTM( 128, #bias_regularizer = bias_regularizer, 
                     dropout=dropout, recurrent_dropout=recurrent_dropout, 
                     go_backwards=go_backwards))
     finish = time.time()
@@ -710,8 +768,6 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
     history = model.fit(x_train, y_train,
             batch_size=batch_size,
             epochs=epochs,
-            # Use validation_split = 0.2 instead of validating on the test set and then evaluating on the test set
-            #validation_split=0.2)
             validation_data=(x_val, y_val),
             verbose=1)
     finish = time.time()
@@ -723,7 +779,34 @@ def main(tr, tr_labels, val, val_labels, te, te_labels, outFile, max_tr_articles
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(['Train', 'Validation'], loc='upper left')
-    plt.show()
+    plt.yticks(np.arange(0.4, 1.0, 0.05))
+
+
+    plot_prefix = str(int(tr.split('/')[-1].split('.')[0]) + int(val.split('/')[-1].split('.')[0]) + int(te.split('/')[-1].split('.')[0]))
+    #plot_prefix = plot_prefix.split('.')[0]
+    plot_name = plot_prefix + '.png'
+    plot_name = 'results/runs/' + plot_name
+    plot_config = 'results/runs/' + plot_prefix + '.config'
+
+    i = 1
+    jpg = '.jpg'
+    conf = '.config'
+    if os.path.exists(plot_name):
+        n = plot_name.split('.')[0]
+        plot_name = n + '_' + str(i) + jpg
+        plot_config = n + '_' + str(i) + conf
+        if os.path.exists(plot_name):
+            while os.path.exists(plot_name):
+                n = plot_name.split('.')[0]
+                n = n.split('_')[0]
+                plot_name = n + '_' + str(i) + jpg
+                plot_config = n + '_' + str(i) + conf
+                i += 1
+    
+    plt.savefig(plot_name)
+    with open(plot_config, 'w') as f:
+        json.dump(config, f, indent=1)
+    #plt.show()
 
     # Plot training & validation loss values
     #plt.plot(history.history['loss'])

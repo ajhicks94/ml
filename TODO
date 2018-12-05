@@ -1,11 +1,21 @@
 len(training_widx)= 1594082
 len(test_widx)= 668136
 
+-2. Use numpy.array.zeros since we know the size of the inputs now?
+    - Just improves runtime, no peformance increase
+
+    DONE
+-1. Refactor hp_lstm.py to remove logic that stops upon max_articles
+    - instead we just pull in the trimmed datasets and not ask questions about distr since we preprocessed for that
+    - also need to generate the word indexes with the above datasets and save them on machine
+
+# May not want to do this depending on maxlen, skip_top, etc.
 0. Save training, validation, and testing numpy arrays to file
     - in load_data(), check if the files exist first. if not,
     - then do computations, but this will save us even more time
     - when conducting the experiments
 
+DONE
 1. Ensure distribution during downsampling
     - I've decided the easiest way to do this without reducing runtime dramatically
     - is to store separate datasets and word indexes for the desired size of the run
