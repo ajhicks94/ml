@@ -102,6 +102,11 @@ def parse_options():
 
     return (training_data, training_labels, validation_data, validation_labels, test_data, test_labels)
 
+def create_word_indexes(tr, tr_l, val, val_l, te, te_l):
+    create_word_index(datafile=tr, labelfile=tr_l, mode="training")
+    create_word_index(datafile=val, labelfile=val_l, mode="validation")
+    create_word_index(datafile=te, labelfile=te_l, mode="test")
+
 def data():
     tr = 'data/training/small/3000.xml'
     tr_labels = 'data/training/small/3000_labels.xml'
@@ -109,22 +114,31 @@ def data():
     val_labels = 'data/validation/small/1000_labels.xml'
     te = 'data/test/small/1000.xml'
     te_labels = 'data/test/small/1000_labels.xml'
+    
     (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, val, val_labels, te, te_labels,
                                                      skip_top=0, num_words=50000, maxlen=None)
     
-def create_word_indexes(tr, tr_l, val, val_l, te, te_l):
-    create_word_index(datafile=tr, labelfile=tr_l, mode="training")
-    create_word_index(datafile=val, labelfile=val_l, mode="validation")
-    create_word_index(datafile=te, labelfile=te_l, mode="test")
+    x_train = sequence.pad_sequences(x_train, maxlen=80)
+    x_val = sequence.pad_sequences(x_val, maxlen=80)
+    x_test = sequence.pad_sequences(x_test, maxlen=80)
+
+    return (x_train, y_train), (x_val, y_val)
 
 def create_model(x_train, y_train, x_test, y_test):
+    with open('data/word_indexes/training.json', 'r') as f:
+        word_index = {}
+        word_index = json.load(f)
+
+    embedding_matrix = get_pretrained_embeddings(  'data/word_indexes/training.json',
+                                                    'data/embeddings/GoogleNews-vectors-negative300.bin')
+    
     EMBEDDING_DIM = 300
     
     model = Sequential()
     model.add(Embedding(len(word_index) + 1,
                         EMBEDDING_DIM,
                         weights=[embedding_matrix],
-                        input_length=maxlen,
+                        input_length=80,
                         trainable=False))
 
     model.add(LSTM( 128, 
@@ -149,6 +163,8 @@ def create_model(x_train, y_train, x_test, y_test):
     return {'loss': -validation_acc, 'status': STATUS_OK, 'model': model}
 
 def main(tr, tr_labels, val, val_labels, te, te_labels):
+    pass
+    '''
     start = time.time()
     create_word_indexes(tr, tr_labels, val, val_labels, te, te_labels)
     finish = time.time()
@@ -272,6 +288,7 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
         json.dump(config, f, indent=4)
         f.write('\nModel Configuration\n')
         f.write(model.to_json(indent=4))
+'''
     #plt.show()
 
     # Plot training & validation loss values
@@ -294,4 +311,24 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     #print('Test accuracy:', acc)
 
 if __name__ == '__main__':
-    main(*parse_options())
+    tr = 'data/training/small/3000.xml'
+    tr_labels = 'data/training/small/3000_labels.xml'
+    val = 'data/validation/small/1000.xml'
+    val_labels = 'data/validation/small/1000_labels.xml'
+    te = 'data/test/small/1000.xml'
+    te_labels = 'data/test/small/1000_labels.xml'
+    
+    create_word_indexes(tr, tr_labels, val, val_labels, te, te_labels)
+
+    best_run, best_model = optim.minimize(model=create_model,
+                                          data=data,
+                                          algo=tpe.suggest,
+                                          max_evals=10,
+                                          trials=Trials())
+
+    (X_train, Y_train) , (X_test, Y_test) = data()
+    print("Evalutation of best performing model:")
+    print(best_model.evaluate(X_test, Y_test))
+    print("Best performing model chosen hyper-parameters:")
+    print(best_run)
+    #main(*parse_options())
