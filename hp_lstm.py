@@ -10,9 +10,13 @@ import time
 
 import matplotlib.pyplot as plt
 import numpy as np
-from keras.layers import LSTM, Dense, Embedding
+#import keras.layers
+from keras.layers import LSTM, Dense, Embedding, BatchNormalization
 from keras.models import Sequential
 from keras.preprocessing import sequence
+from hyperopt import Trials, STATUS_OK, tpe
+from hyperas import optim
+from hyperas.distributions import choice, uniform
 
 from hp import create_word_index, get_pretrained_embeddings, load_data
 
@@ -98,10 +102,51 @@ def parse_options():
 
     return (training_data, training_labels, validation_data, validation_labels, test_data, test_labels)
 
+def data():
+    tr = 'data/training/small/3000.xml'
+    tr_labels = 'data/training/small/3000_labels.xml'
+    val = 'data/validation/small/1000.xml'
+    val_labels = 'data/validation/small/1000_labels.xml'
+    te = 'data/test/small/1000.xml'
+    te_labels = 'data/test/small/1000_labels.xml'
+    (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, val, val_labels, te, te_labels,
+                                                     skip_top=0, num_words=50000, maxlen=None)
+    
 def create_word_indexes(tr, tr_l, val, val_l, te, te_l):
     create_word_index(datafile=tr, labelfile=tr_l, mode="training")
     create_word_index(datafile=val, labelfile=val_l, mode="validation")
     create_word_index(datafile=te, labelfile=te_l, mode="test")
+
+def create_model(x_train, y_train, x_test, y_test):
+    EMBEDDING_DIM = 300
+    
+    model = Sequential()
+    model.add(Embedding(len(word_index) + 1,
+                        EMBEDDING_DIM,
+                        weights=[embedding_matrix],
+                        input_length=maxlen,
+                        trainable=False))
+
+    model.add(LSTM( 128, 
+                    dropout={{uniform(0,1)}}, recurrent_dropout={{uniform(0,1)}}, 
+                    go_backwards=False))
+
+    #model.add(BatchNormalization())
+    model.add(Dense(1, activation='sigmoid'))
+ 
+    model.compile(loss='binary_crossentropy',
+                optimizer='adam',
+                metrics=['accuracy'])
+
+    history = model.fit(x_train, y_train,
+            batch_size=32,
+            epochs=10,
+            validation_data=(x_test, y_test),
+            verbose=1)
+
+    validation_acc = np.amax(result.history['val_acc']) 
+    print('Best validation acc of epoch:', validation_acc)
+    return {'loss': -validation_acc, 'status': STATUS_OK, 'model': model}
 
 def main(tr, tr_labels, val, val_labels, te, te_labels):
     start = time.time()
@@ -172,6 +217,7 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
                     dropout=dropout, recurrent_dropout=recurrent_dropout, 
                     go_backwards=go_backwards))
 
+    model.add(BatchNormalization())
     model.add(Dense(1, activation='sigmoid'))
  
     model.compile(loss='binary_crossentropy',
@@ -224,6 +270,8 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     plt.savefig(plot_name)
     with open(plot_config, 'w') as f:
         json.dump(config, f, indent=4)
+        f.write('\nModel Configuration\n')
+        f.write(model.to_json(indent=4))
     #plt.show()
 
     # Plot training & validation loss values
