@@ -1,0 +1,1 @@
+python hp_lstm.py --training_data data/training/medium/18000.xml --training_labels data/training/medium/18000_labels.xml --validation_data data/validation/medium/6000.xml --validation_labels data/validation/medium/6000_labels.xml --test_data data/test/medium/6000.xml --test_labels data/test/medium/6000_labels.xml
