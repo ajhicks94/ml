@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from __future__ import print_function
 
 import getopt
@@ -11,9 +13,6 @@ import numpy as np
 from keras.layers import LSTM, Dense, Embedding, BatchNormalization
 from keras.models import Sequential
 from keras.preprocessing import sequence
-from hyperopt import Trials, STATUS_OK, tpe
-from hyperas import optim
-from hyperas.distributions import choice, uniform
 
 from hp import create_word_index, get_pretrained_embeddings, load_data
 
@@ -22,7 +21,9 @@ def print_usage(filename, message):
     print(message)
     print("Usage: python %s --training_data <file> --training_labels <file> --validation_data <file> --validation_labels <file> --test_data <file> --test_labels <file>" % filename)
 
+########## OPTIONS HANDLING ##########
 def parse_options():
+    """Parses the command line options."""
     try:
         long_options = ["training_data=", "training_labels=", "validation_data=", "validation_labels=", "test_data=", "test_labels="]
         opts, _ = getopt.getopt(sys.argv[1:], "", long_options)
@@ -102,36 +103,66 @@ def create_word_indexes(tr, tr_l, val, val_l, te, te_l):
     create_word_index(datafile=val, labelfile=val_l, mode="validation")
     create_word_index(datafile=te, labelfile=te_l, mode="test")
 
-def data():
-    maxlen = 80
-    tr = 'data/training/small/3000.xml'
-    tr_labels = 'data/training/small/3000_labels.xml'
-    val = 'data/validation/small/1000.xml'
-    val_labels = 'data/validation/small/1000_labels.xml'
-    te = 'data/test/small/1000.xml'
-    te_labels = 'data/test/small/1000_labels.xml'
+def main(tr, tr_labels, val, val_labels, te, te_labels):
     
+    
+    start = time.time()
+    create_word_indexes(tr, tr_labels, val, val_labels, te, te_labels)
+    finish = time.time()
+    print("Building word indexes:", finish-start)
+
+    # Load configuration
+    with open('run.json', 'r') as j:
+        config = {}
+        config = json.load(j)
+
+    max_features = config['max_features']           # Word Embedding                                 #default 20000
+    skip_top = config['skip_top']                   # Skip the most common words                     #default 0
+    num_words = config['num_words']                 # Upper limit for word commonality               #default 0
+    maxlen = config['maxlen']                       # Maximum length of a sequence (sentence)        #default 80
+
+    start = time.time()
+    # Load and preprocess data
     (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, val, val_labels, te, te_labels,
-                                                     skip_top=0, num_words=50000, maxlen=None)
+                                                     skip_top=skip_top, num_words=num_words, maxlen=None)
+    finish = time.time()
+    print("Load_data:", finish-start)
     
+    # ML Stuff now
+    print(len(x_train), 'train sequences')
+    print(len(x_val), 'validation sequences')
+    print(len(x_test), 'test sequences\n')
+
+    print('Pad sequences...', end='')
+    start = time.time()
     x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
     x_val = sequence.pad_sequences(x_val, maxlen=maxlen)
     x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
+    finish = time.time()
+    print(finish-start)
 
+    batch_size = config['batch_size']               # Number of instances before updating weights    #default 32
+    epochs = config['epochs']                       # Number of epochs                               #default 15
+
+    go_backwards = True if (config['go_backwards'] == "True") else False
+    dropout = config['dropout']
+    recurrent_dropout = config['recurrent_dropout']
+    #bias_regularizer = config['bias_regularizer']
+
+    # Word Embeddings
+    start = time.time()
     embedding_matrix = get_pretrained_embeddings(  'data/word_indexes/training.json',
                                                     'data/embeddings/GoogleNews-vectors-negative300.bin')
+    finish = time.time()
+    print(finish-start)
 
-    return (x_train, y_train), (x_val, y_val), embedding_matrix
-
-def create_model(x_train, y_train, x_test, y_test, embedding_matrix):
     with open('data/word_indexes/training.json', 'r') as f:
         word_index = {}
         word_index = json.load(f)
 
 
     EMBEDDING_DIM = 300
-    maxlen = 80
-
+    
     model = Sequential()
     model.add(Embedding(len(word_index) + 1,
                         EMBEDDING_DIM,
@@ -139,49 +170,86 @@ def create_model(x_train, y_train, x_test, y_test, embedding_matrix):
                         input_length=maxlen,
                         trainable=False))
 
-    model.add(LSTM( 128, 
-                    dropout=0.484, recurrent_dropout=0.026, 
-                    go_backwards=False))
-    
-      model.add(BatchNormalization());
+    model.add(LSTM( 128, #bias_regularizer = bias_regularizer, 
+                    dropout=dropout, recurrent_dropout=recurrent_dropout, 
+                    go_backwards=go_backwards))
 
-    model.add(Dense(1, activation={{choice(['sigmoid','relu'])}}))
+    model.add(BatchNormalization())
+    model.add(Dense(1, activation='sigmoid'))
  
     model.compile(loss='binary_crossentropy',
                 optimizer='adam',
                 metrics=['accuracy'])
 
+    print(model.summary())
+
+    start = time.time()
     history = model.fit(x_train, y_train,
-            batch_size={{choice([8,16,32,64,128,256])}},
-            epochs=10,
-            validation_data=(x_test, y_test),
+            batch_size=batch_size,
+            epochs=epochs,
+            validation_data=(x_val, y_val),
             verbose=1)
+    finish = time.time()
+    print("Fitting model took:", finish-start)
 
-    validation_acc = np.amax(history.history['val_acc']) 
-    print('Best validation acc of epoch:', validation_acc)
-    return {'loss': -validation_acc, 'status': STATUS_OK, 'model': model}
+    # Plot training & validation accuracy values
+    plt.plot(history.history['acc'])
+    plt.plot(history.history['val_acc'])
+    plt.title('Model accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Validation'], loc='upper left')
+    plt.yticks(np.arange(0.4, 1.0, 0.05))
 
-def main(tr, tr_labels, val, val_labels, te, te_labels):
-    pass
+    # Use string interpolation here instead of this nonsense
+    plot_prefix = str(int(tr.split('/')[-1].split('.')[0]) + int(val.split('/')[-1].split('.')[0]) + int(te.split('/')[-1].split('.')[0]))
+    #plot_prefix = plot_prefix.split('.')[0]
+    plot_name = plot_prefix + '.png'
+    plot_name = 'results/runs/' + plot_name
+    plot_config = 'results/runs/' + plot_prefix + '.config'
+
+    i = 1
+    jpg = '.jpg'
+    conf = '.config'
+    # Just use a simple loop and check if 'filename_%s.jpg' % i exists
+    if os.path.exists(plot_name):
+        n = plot_name.split('.')[0]
+        plot_name = n + '_' + str(i) + jpg
+        plot_config = n + '_' + str(i) + conf
+        if os.path.exists(plot_name):
+            while os.path.exists(plot_name):
+                n = plot_name.split('.')[0]
+                n = n.split('_')[0]
+                plot_name = n + '_' + str(i) + jpg
+                plot_config = n + '_' + str(i) + conf
+                i += 1
+    
+    plt.savefig(plot_name)
+    with open(plot_config, 'w') as f:
+        json.dump(config, f, indent=4)
+        f.write('\nModel Configuration\n')
+        f.write(model.to_json(indent=4))
+
+    #plt.show()
+
+    # Plot training & validation loss values
+    #plt.plot(history.history['loss'])
+    #plt.plot(history.history['val_loss'])
+    #plt.title('Model loss')
+    #plt.ylabel('Loss')
+    #plt.xlabel('Epoch')
+    #plt.legend(['Train', 'Validation'], loc='upper left')
+    #plt.show()
+    #print("val_loss:\t", history['val_loss'])
+    #print("val_acc:\t", history['val_acc'])
+    #print("loss:\t\t", history['loss'])
+    #print("acc:\t\t", history['acc'])
+
+    # DO NOT UNCOMMENT THIS
+    #score, acc = model.evaluate(x_test, y_test,
+    #                            batch_size=batch_size)
+    #print('Test score:', score)
+    #print('Test accuracy:', acc)
 
 if __name__ == '__main__':
-    tr = 'data/training/small/3000.xml'
-    tr_labels = 'data/training/small/3000_labels.xml'
-    val = 'data/validation/small/1000.xml'
-    val_labels = 'data/validation/small/1000_labels.xml'
-    te = 'data/test/small/1000.xml'
-    te_labels = 'data/test/small/1000_labels.xml'
-    
-    create_word_indexes(tr, tr_labels, val, val_labels, te, te_labels)
-
-    best_run, best_model = optim.minimize(model=create_model,
-                                          data=data,
-                                          algo=tpe.suggest,
-                                          max_evals=10,
-                                          trials=Trials())
-
-    (X_train, Y_train) , (X_test, Y_test), embedding_matrix = data()
-    print("Evaluation of best performing model:")
-    print(best_model.evaluate(X_test, Y_test))
-    print("Best performing model chosen hyper-parameters:")
-    print(best_run)
+    main(*parse_options())

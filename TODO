@@ -27,3 +27,5 @@ DONE
     - I actually improved my own method by using some preprocessing outside
     - of the program and then removing unnecessary code inside. So I will not need
     - to use Tokenizer
+
+**Normalization techniques and regularization**
