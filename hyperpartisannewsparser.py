@@ -46,7 +46,8 @@ class HyperpartisanNewsParser(xml.sax.ContentHandler):
  
                     # Split into sequence of words
                     textcleaned = article.text.split()
-
+                    #print("Before:\n\n")
+                    #print(textcleaned)
                     # Look up each word's index in freq index and append
                     for word in textcleaned:
                         idx = self.word_index[word]

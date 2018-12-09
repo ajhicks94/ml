@@ -3,6 +3,8 @@ import time
 import xml
 from collections import Counter, OrderedDict
 
+import matplotlib.pyplot as plt
+
 import numpy as np
 from gensim.models.keyedvectors import KeyedVectors
 from keras.preprocessing.sequence import sequence
@@ -10,6 +12,18 @@ from tqdm import tqdm
 
 from hyperpartisannewsparser import HyperpartisanNewsParser
 
+def print_word_from_idx(data, index_from=0):
+    with open('data/word_indexes/training.json') as f:
+        word_index = {}
+        word_index = json.load(f)
+
+        keys = word_index.keys()
+        for idx in data:
+            for word, count in word_index.items():
+                if(count == (idx-index_from)):
+                    print(word + " ", end='')
+        
+        print("\nNumber of words in sequence: ", len(data))
 
 # Reads in data files
 def get_data(filename, filetype, mode, data, labelfile="", word_index={}):
@@ -114,6 +128,18 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, num_words=None, ski
     finish = time.time()
     print("get_data(x_train) took:", finish-start)
 
+    #articlelengths = []
+    #for article in x_train:
+    #    articlelengths.append(len(article))
+
+    #print("maximum length of an article in training: ", max(articlelengths))
+    #print("average length of an article in training: ", sum(articlelengths)/len(articlelengths))
+    #plt.plot(articlelengths)
+    #plt.title('Training article word counts')
+    #plt.ylabel('length')
+    #plt.xlabel('article')
+    #plt.show()
+
     # Populate y_train
     #print("Populating y_train...")
     start = time.time()
@@ -149,7 +175,7 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, num_words=None, ski
 
     x_test = np.array(x_test)
     y_test = np.array(y_test)
-    
+
     _remove_long_seq = sequence._remove_long_seq
 
     # Makes random numbers predictable based on (seed)
@@ -184,14 +210,14 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, num_words=None, ski
     # Append all datasets
     xs = np.concatenate([x_train, x_val, x_test])
     ys = np.concatenate([y_train, y_val, y_test])
-
+    #print_word_from_idx(xs[0])
     if start_char is not None:
         # Adds a start_char to the beginning of each sentence
         xs = [[start_char] + [w + index_from for w in x] for x in xs]
     elif index_from:
         # This shifts the indexes by index_from
         xs = [[w + index_from for w in x] for x in xs]
-
+    #print_word_from_idx(xs[0], index_from)
     # Trims sentences down to maxlen
     if maxlen:
         xs, ys = _remove_long_seq(maxlen, xs, ys)

@@ -165,6 +165,7 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
         word_index = {}
         word_index = json.load(f)
 
+
     EMBEDDING_DIM = 300
     
     model = Sequential()
@@ -174,14 +175,14 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
                         weights=[embedding_matrix],
                         input_length=maxlen,
                         trainable=False))
+    
     #model.add(Embedding(max_features, 128))
     model.add(LSTM( 128, dropout=dropout, recurrent_dropout=recurrent_dropout,
-                    ))
-    
+                    return_sequences=True))
+    model.add(LSTM( 128, dropout=dropout, recurrent_dropout=recurrent_dropout))
+    model.add(BatchNormalization())
     model.add(Dense(1, activation='sigmoid'))
  
-    # Possibly promising
-    #rmsp = optimizers.RMSprop(lr=0.001)
     model.compile(loss='binary_crossentropy',
                 optimizer='adam',
                 metrics=['accuracy'])
@@ -192,7 +193,6 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     history = model.fit(x_train, y_train,
             batch_size=batch_size,
             epochs=epochs,
-            #validation_split=0.2,
             validation_data=(x_val, y_val),
             verbose=1)
     finish = time.time()
@@ -201,7 +201,7 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     # Plot training & validation accuracy values
     plt.plot(history.history['acc'])
     plt.plot(history.history['val_acc'])
-    plt.title('Single LSTM + W2V + Extra Dense')
+    plt.title('Stacked LSTM + W2V Model + BN')
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(['Training', 'Validation'], loc='upper left')

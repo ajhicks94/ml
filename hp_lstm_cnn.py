@@ -10,13 +10,14 @@ import time
 
 import matplotlib.pyplot as plt
 import numpy as np
-from keras.layers import LSTM, Dense, Embedding, BatchNormalization
+from keras.layers import LSTM, Dense, Embedding, Convolution1D, Activation, MaxPool1D, Dropout
+from keras.layers import BatchNormalization
 from keras.models import Sequential
 from keras.preprocessing import sequence
+from keras.callbacks import EarlyStopping
 from keras import optimizers
-from keras import regularizers
 
-from hp import create_word_index, get_pretrained_embeddings, load_data, print_word_from_idx
+from hp import create_word_index, get_pretrained_embeddings, load_data
 
 
 def print_usage(filename, message):
@@ -104,7 +105,6 @@ def create_word_indexes(tr, tr_l, val, val_l, te, te_l):
     create_word_index(datafile=tr, labelfile=tr_l, mode="training")
     create_word_index(datafile=val, labelfile=val_l, mode="validation")
     create_word_index(datafile=te, labelfile=te_l, mode="test")
-   
 
 def main(tr, tr_labels, val, val_labels, te, te_labels):
     start = time.time()
@@ -129,14 +129,11 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     finish = time.time()
     print("Load_data:", finish-start)
     
-    #print_word_from_idx(x_train[0], 3)
-
     # ML Stuff now
     print(len(x_train), 'train sequences')
     print(len(x_val), 'validation sequences')
     print(len(x_test), 'test sequences\n')
 
-    #print_word_from_idx(x_train[0], 3)
     print('Pad sequences...', end='')
     start = time.time()
     x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
@@ -144,8 +141,6 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
     finish = time.time()
     print(finish-start)
-    #print_word_from_idx(x_train[0], 3)
-    #print("len(x_train[0]=", len(x_train[0]))
 
     batch_size = config['batch_size']               # Number of instances before updating weights    #default 32
     epochs = config['epochs']                       # Number of epochs                               #default 15
@@ -153,6 +148,7 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     go_backwards = True if (config['go_backwards'] == "True") else False
     dropout = config['dropout']
     recurrent_dropout = config['recurrent_dropout']
+    #bias_regularizer = config['bias_regularizer']
 
     # Word Embeddings
     start = time.time()
@@ -165,19 +161,22 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
         word_index = {}
         word_index = json.load(f)
 
+
     EMBEDDING_DIM = 300
     
     model = Sequential()
-    
     model.add(Embedding(len(word_index) + 1,
                         EMBEDDING_DIM,
                         weights=[embedding_matrix],
                         input_length=maxlen,
                         trainable=False))
     #model.add(Embedding(max_features, 128))
+    model.add(Convolution1D(filters=128, kernel_size=3, padding='same'))
+    model.add(Activation('relu'))
+    model.add(MaxPool1D(pool_size=2))
     model.add(LSTM( 128, dropout=dropout, recurrent_dropout=recurrent_dropout,
                     ))
-    
+    model.add(BatchNormalization())
     model.add(Dense(1, activation='sigmoid'))
  
     # Possibly promising
@@ -188,23 +187,25 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
 
     print(model.summary())
 
+    #early_stopping = EarlyStopping(patience=3)
+
     start = time.time()
     history = model.fit(x_train, y_train,
             batch_size=batch_size,
             epochs=epochs,
-            #validation_split=0.2,
+            #validation_split=0.333,
             validation_data=(x_val, y_val),
-            verbose=1)
+            verbose=1)#, callbacks=[early_stopping])
     finish = time.time()
     print("Fitting model took:", finish-start)
 
     # Plot training & validation accuracy values
     plt.plot(history.history['acc'])
     plt.plot(history.history['val_acc'])
-    plt.title('Single LSTM + W2V + Extra Dense')
+    plt.title('CNN + LSTM + W2V + BN')
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
-    plt.legend(['Training', 'Validation'], loc='upper left')
+    plt.legend(['Train', 'Validation'], loc='upper left')
     plt.yticks(np.arange(0.4, 1.0, 0.05))
 
     # Use string interpolation here instead of this nonsense
