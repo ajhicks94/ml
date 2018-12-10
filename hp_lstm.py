@@ -103,8 +103,10 @@ def create_word_indexes(tr, tr_l, val, val_l, te, te_l):
     create_word_index(datafile=te, labelfile=te_l, mode="test")
 
 def data(tr, tr_labels, val, val_labels, te, te_labels):
-    MAXLEN = 80
-    
+    MAXLEN = 208
+    NUM_WORDS = 40000
+    SKIP_TOP = 0
+
     tr = 'data/training/medium/18000.xml'
     tr_labels = 'data/training/medium/18000_labels.xml'
     val = 'data/validation/medium/6000.xml'
@@ -113,7 +115,7 @@ def data(tr, tr_labels, val, val_labels, te, te_labels):
     te_labels = 'data/test/medium/6000_labels.xml'
     
     (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, val, val_labels, te, te_labels,
-                                                     skip_top=0, num_words=50000, maxlen=None)
+                                                     skip_top=SKIP_TOP, num_words=NUM_WORDS, maxlen=None)
     
     x_train = sequence.pad_sequences(x_train, maxlen=MAXLEN)
     x_val = sequence.pad_sequences(x_val, maxlen=MAXLEN)
@@ -125,14 +127,15 @@ def data(tr, tr_labels, val, val_labels, te, te_labels):
 
     return (x_train, y_train), (x_val, y_val), embedding_matrix
 
-def create_model(x_train, y_train, x_test, y_test, embedding_matrix):
+def create_model(x_train, y_train, x_val, y_val, embedding_matrix):
     with open('data/word_indexes/training.json', 'r') as f:
         word_index = {}
         word_index = json.load(f)
 
     EMBEDDING_DIM = 300
     EPOCHS = 10
-    MAXLEN = 80
+    MAXLEN = 208
+    BATCH_SIZE = 32
 
     model = Sequential()
     model.add(Embedding(len(word_index) + 1,
@@ -142,8 +145,7 @@ def create_model(x_train, y_train, x_test, y_test, embedding_matrix):
                         trainable=False))
 
     model.add(LSTM( 128, 
-                    dropout=0.484, recurrent_dropout=0.026, 
-                    go_backwards=False))
+                    dropout={{uniform(0,1)}}, recurrent_dropout=0.1))
     
     model.add(Dense(1, activation='sigmoid'))
  
@@ -152,9 +154,9 @@ def create_model(x_train, y_train, x_test, y_test, embedding_matrix):
                 metrics=['accuracy'])
 
     history = model.fit(x_train, y_train,
-            batch_size={{choice([8,16,32,64,128,256])}},
-            epochs=10,
-            validation_data=(x_test, y_test),
+            batch_size=BATCH_SIZE,
+            epochs=EPOCHS,
+            validation_data=(x_val, y_val),
             verbose=1)
 
     validation_acc = np.amax(history.history['val_acc']) 
@@ -184,7 +186,13 @@ if __name__ == '__main__':
                                           trials=trial)
 
     (X_train, Y_train) , (X_test, Y_test), embedding_matrix = data()
-    print("Testing: ");
+
+    print("----------trials-------------")
+    for i in trials.trials:
+        vals = i.get('misc').get('vals')
+        results = i.get('result').get('loss')
+        print(vals,results)
+
     print("Evaluation of best performing model:")
     print(best_model.evaluate(X_test, Y_test))
     print("Best performing model chosen hyper-parameters:")
