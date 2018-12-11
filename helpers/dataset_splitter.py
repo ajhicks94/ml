@@ -109,7 +109,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 4:
         print("Incorrect number of parameters")
-        print("Usage: python dataset_splitter.py <source> <destination>")
+        print("Usage: python dataset_splitter.py <src> <src_lbl> <dest> <dest_lbl> <num_articles>")
         sys.exit()
 
     src = sys.argv[1]

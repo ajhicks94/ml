@@ -15,9 +15,9 @@ if __name__ == "__main__":
     etree.strip_tags(tree, 'p', 'a', 'q')
 
     # Clean away any unneeded chars, including unicode! :D
-    print("Remove characters: [^a-z ]")
+    print("Remove characters: [^a-z0-9-\' ]")
     for article in tree.getroot().getchildren():
-        article.text = re.sub('[^a-z ]', '', article.text.lower())
+        article.text = re.sub('[^a-z0-9-\' ]', '', article.text.lower())
 
     # Save xml file
     # Unknown serialization error happens

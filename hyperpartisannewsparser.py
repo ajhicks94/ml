@@ -50,7 +50,14 @@ class HyperpartisanNewsParser(xml.sax.ContentHandler):
                     #print(textcleaned)
                     # Look up each word's index in freq index and append
                     for word in textcleaned:
-                        idx = self.word_index[word]
+                        try:
+                            idx = self.word_index[word]
+                            # Basically doing index_from in here
+                            # so we can avoid errors on OOV_chars
+                            idx += 3
+                        except KeyError:
+                            # OOV_CHAR
+                            idx = 2
                         row.append(idx)
                     
                     # Append to sequence array

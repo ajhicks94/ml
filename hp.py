@@ -75,18 +75,18 @@ def get_pretrained_embeddings(tr_widx, embedding_file):
     EMBEDDING_DIM = 300
 
     embedding = KeyedVectors.load_word2vec_format(embedding_file, binary=True)
-    
-    embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
-    with tqdm(total=len(word_index), unit='it', unit_scale=True, unit_divisor=1024) as pbar:
+    embedding_matrix = np.zeros((len(embedding.wv.vocab) + 1, EMBEDDING_DIM))
+    #embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
+    with tqdm(total=len(embedding_matrix), unit='it', unit_scale=True, unit_divisor=1024) as pbar:
         i = 0
         unk_words = []
-        for word in word_index:
-            if word in embedding.wv.vocab:
-                embedding_vector = embedding.wv[word]
-                if embedding_vector is not None:
-                    embedding_matrix[i] = embedding_vector
-            else:
-                unk_words.append(word)
+        for word in embedding.wv.vocab:
+            #if word in embedding.wv.vocab:
+            embedding_vector = embedding.wv[word]
+            if embedding_vector is not None:
+                embedding_matrix[i] = embedding_vector
+            #else:
+            #    unk_words.append(word)
             
             pbar.update()
             i += 1
@@ -150,7 +150,9 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, num_words=None, ski
     # Populate x_val
     #print("Populating x_val...")
     start = time.time()
-    get_data(filename=val, labelfile=val_labels, filetype='xml', mode="x", data=x_val, word_index=validation_widx)
+    #get_data(filename=val, labelfile=val_labels, filetype='xml', mode="x", data=x_val, word_index=validation_widx)
+    get_data(filename=val, labelfile=val_labels, filetype='xml', mode="x", data=x_val, word_index=training_widx)
+
     finish = time.time()
     print("get_data(x_val) took:", finish-start)
 
@@ -162,7 +164,9 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, num_words=None, ski
     print("get_data(y_val) took:", finish-start)
 
     # Populate x_test
-    get_data(filename=te, labelfile=te_labels, filetype='xml', mode='x', data=x_test, word_index=test_widx)
+    #get_data(filename=te, labelfile=te_labels, filetype='xml', mode='x', data=x_test, word_index=test_widx)
+    get_data(filename=te, labelfile=te_labels, filetype='xml', mode='x', data=x_test, word_index=training_widx)
+
 
     # Populate y_test
     get_data(filename=te_labels, filetype='xml', mode='y', data=y_test)
