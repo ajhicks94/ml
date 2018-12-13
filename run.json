@@ -1,0 +1,12 @@
+{
+    "max_features": 40000,        
+    "skip_top": 0,         
+    "num_words": 15000,             
+    "maxlen": 300,                
+    "batch_size": 32,
+    "epochs": 2,
+
+    "go_backwards": "False",
+    "dropout": 0.6,
+    "recurrent_dropout": 0
+}
