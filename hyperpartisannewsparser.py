@@ -90,7 +90,8 @@ class HyperpartisanNewsParser(xml.sax.ContentHandler):
 
     def endDocument(self):
         if self.mode == 'y':
-            print("Total count:", self.counter)
-            print("\tleft:\t\t", self.left_count)
-            print("\tright:\t\t", self.right_count)
-            print("\tneutral:\t", self.neutral_count)
+            pass
+            #print("Total count:", self.counter)
+            #print("\tleft:\t\t", self.left_count)
+            #print("\tright:\t\t", self.right_count)
+            #print("\tneutral:\t", self.neutral_count)

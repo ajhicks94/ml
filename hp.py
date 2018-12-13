@@ -40,7 +40,8 @@ def create_word_index(datafile, labelfile, mode):
     # Create a new file with a blank dictionary
     # training.json
     # test.json
-    idx_file = "data/word_indexes/" + mode + ".json"
+    #idx_file = "data/word_indexes/" + mode + ".json"
+    idx_file = datafile + '.json'
     with open(idx_file, 'w') as f:
         data = {}
         json.dump(data,f)
@@ -100,19 +101,20 @@ def get_pretrained_embeddings(tr_widx, embedding_file):
 def load_data(tr, tr_labels, val, val_labels, te, te_labels, num_words=None, skip_top=0, maxlen=None,
               seed=113, start_char=1, oov_char=2, index_from=3):
 
-    with open('data/word_indexes/training.json', 'r') as f:
+    with open(tr + '.json', 'r') as f:
+    #with open('data/word_indexes/training.json', 'r') as f:
         training_widx = {}
         training_widx = json.load(f)
 
     print('len(training_widx)= ', len(training_widx), "\n")
 
-    with open('data/word_indexes/validation.json', 'r') as f:
-        validation_widx = {}
-        validation_widx = json.load(f)
+    #with open('data/word_indexes/validation.json', 'r') as f:
+    #    validation_widx = {}
+    #    validation_widx = json.load(f)
 
-    with open('data/word_indexes/test.json', 'r') as f:
-        test_widx = {}
-        test_widx = json.load(f)
+    #with open('data/word_indexes/test.json', 'r') as f:
+    #    test_widx = {}
+    #    test_widx = json.load(f)
 
     # Start with python lists, then convert to numpy when finished for better runtime
     x_train = []
@@ -164,12 +166,18 @@ def load_data(tr, tr_labels, val, val_labels, te, te_labels, num_words=None, ski
     print("get_data(y_val) took:", finish-start)
 
     # Populate x_test
+    start = time.time()
     #get_data(filename=te, labelfile=te_labels, filetype='xml', mode='x', data=x_test, word_index=test_widx)
     get_data(filename=te, labelfile=te_labels, filetype='xml', mode='x', data=x_test, word_index=training_widx)
-
+    finish = time.time()
+    print("get_data(x_test) took:", finish-start)
 
     # Populate y_test
+    start = time.time()
     get_data(filename=te_labels, filetype='xml', mode='y', data=y_test)
+    finish = time.time()
+    print("get_data(y_test) took:", finish-start)
+
 
     x_train = np.array(x_train)
     y_train = np.array(y_train)

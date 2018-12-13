@@ -102,15 +102,15 @@ def parse_options():
 
 def create_word_indexes(tr, tr_l, val, val_l, te, te_l):
     create_word_index(datafile=tr, labelfile=tr_l, mode="training")
-    create_word_index(datafile=val, labelfile=val_l, mode="validation")
-    create_word_index(datafile=te, labelfile=te_l, mode="test")
+    #create_word_index(datafile=val, labelfile=val_l, mode="validation")
+    #create_word_index(datafile=te, labelfile=te_l, mode="test")
    
 
 def main(tr, tr_labels, val, val_labels, te, te_labels):
-    start = time.time()
-    create_word_indexes(tr, tr_labels, val, val_labels, te, te_labels)
-    finish = time.time()
-    print("Building word indexes:", finish-start)
+    #start = time.time()
+    #create_word_indexes(tr, tr_labels, val, val_labels, te, te_labels)
+    #finish = time.time()
+    #print("Building word indexes:", finish-start)
 
     # Load configuration
     with open('run.json', 'r') as j:
@@ -124,8 +124,9 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
 
     start = time.time()
     # Load and preprocess data
+    index_from = 0
     (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data(tr, tr_labels, val, val_labels, te, te_labels,
-                                                     skip_top=skip_top, num_words=num_words, maxlen=None)
+                                                     skip_top=skip_top, num_words=num_words, maxlen=None, index_from=index_from)
     finish = time.time()
     print("Load_data:", finish-start)
     
@@ -156,31 +157,31 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
 
     # Word Embeddings
     start = time.time()
-    embedding_matrix = get_pretrained_embeddings(  'data/word_indexes/training.json',
-                                                    'data/embeddings/GoogleNews-vectors-negative300.bin')
+    #embedding_matrix = np.load('data/embeddings/embedding_matrix.npy')
+    #embedding_matrix = get_pretrained_embeddings(  'data/word_indexes/training.json',
+    #                                                'data/embeddings/GoogleNews-vectors-negative300.bin')
     finish = time.time()
     print(finish-start)
 
-    with open('data/word_indexes/training.json', 'r') as f:
+    with open(tr + '.json', 'r') as f:
         word_index = {}
         word_index = json.load(f)
 
 
-    EMBEDDING_DIM = 300
+    #EMBEDDING_DIM = 300
     
     model = Sequential()
     
-    model.add(Embedding(len(word_index) + 1,
-                        EMBEDDING_DIM,
-                        weights=[embedding_matrix],
-                        input_length=maxlen,
-                        trainable=False))
+    #model.add(Embedding(len(embedding_matrix),
+    #                    EMBEDDING_DIM,
+    #                    weights=[embedding_matrix],
+    #                    input_length=maxlen,
+    #                    trainable=False))
     
-    #model.add(Embedding(max_features, 128))
+    model.add(Embedding(max_features, 128))
     model.add(LSTM( 128, dropout=dropout, recurrent_dropout=recurrent_dropout,
                     return_sequences=True))
     model.add(LSTM( 128, dropout=dropout, recurrent_dropout=recurrent_dropout))
-    model.add(BatchNormalization())
     model.add(Dense(1, activation='sigmoid'))
  
     model.compile(loss='binary_crossentropy',
@@ -231,10 +232,18 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
                 i += 1
     
     plt.savefig(plot_name)
+    print("Saved model graph to: " + plot_name)
+    print("Saved model config to: " + plot_config)
     with open(plot_config, 'w') as f:
         json.dump(history.history, f, indent=4)
         json.dump(config, f, indent=4)
         f.write(model.to_json(indent=4))
+
+    print("max_acc: ", max(history.history['val_acc']))
+    print("avg_acc: ", sum(history.history['val_acc'])/len(history.history['val_acc']))
+    print("end_loss: ", history.history['val_loss'][-1])
+    print("avg_loss: ", sum(history.history['val_loss'])/len(history.history['val_loss']))
+
     #plt.show()
 
     # Plot training & validation loss values

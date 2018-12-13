@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+import numpy as np
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -103,16 +104,17 @@ def parse_options():
 
 def create_word_indexes(tr, tr_l, val, val_l, te, te_l):
     create_word_index(datafile=tr, labelfile=tr_l, mode="training")
-    create_word_index(datafile=val, labelfile=val_l, mode="validation")
-    create_word_index(datafile=te, labelfile=te_l, mode="test")
+    #create_word_index(datafile=val, labelfile=val_l, mode="validation")
+    #create_word_index(datafile=te, labelfile=te_l, mode="test")
+    
    
 
 def main(tr, tr_labels, val, val_labels, te, te_labels):
-    start = time.time()
-    create_word_indexes(tr, tr_labels, val, val_labels, te, te_labels)
-    finish = time.time()
-    print("Building word indexes:", finish-start)
-
+    #start = time.time()
+    #create_word_indexes(tr, tr_labels, val, val_labels, te, te_labels)
+    #finish = time.time()
+    #print("Building word indexes:", finish-start)
+    
     # Load configuration
     with open('run.json', 'r') as j:
         config = {}
@@ -158,13 +160,17 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     recurrent_dropout = config['recurrent_dropout']
 
     # Word Embeddings
+    print("Loading embedding matrix...", end='')
     start = time.time()
+    embedding_matrix = np.load('data/embeddings/embedding_matrix.npy')
     #embedding_matrix = get_pretrained_embeddings(  'data/word_indexes/training.json',
     #                                                'data/embeddings/GoogleNews-vectors-negative300.bin')
+    #np.save('data/embedding_matrix.npy', embedding_matrix)
     finish = time.time()
     print(finish-start)
 
-    with open('data/word_indexes/training.json', 'r') as f:
+    with open(tr + '.json', 'r') as f:
+    #with open('data/word_indexes/training.json', 'r') as f:
         word_index = {}
         word_index = json.load(f)
 
@@ -172,14 +178,14 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     
     model = Sequential()
     
-    #model.add(Embedding(len(embedding_matrix),
-    #                    EMBEDDING_DIM,
-    #                    weights=[embedding_matrix],
-    #                    input_length=maxlen,
-    #                    trainable=False))
+    model.add(Embedding(len(embedding_matrix),
+                        EMBEDDING_DIM,
+                        weights=[embedding_matrix],
+                        input_length=maxlen,
+                        trainable=False))
 
-    model.add(Embedding(max_features, 128))
-    model.add(LSTM( 128, dropout=dropout, recurrent_dropout=recurrent_dropout,
+    #model.add(Embedding(max_features, 128))
+    model.add(LSTM( 20, dropout=dropout, recurrent_dropout=recurrent_dropout,
                     ))
     
     model.add(Dense(1, activation='sigmoid'))
@@ -187,17 +193,17 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     # Possibly promising
     #rmsp = optimizers.RMSprop(lr=0.001)
     model.compile(loss='binary_crossentropy',
-                optimizer='adam',
+                optimizer='rmsprop',
                 metrics=['accuracy'])
-
+    # adam, rmsprop, sgd, adamax, nadam
     print(model.summary())
 
     start = time.time()
     history = model.fit(x_train, y_train,
             batch_size=batch_size,
             epochs=epochs,
-            validation_split=0.3,
-            #validation_data=(x_val, y_val),
+            #validation_split=0.3,
+            validation_data=(x_val, y_val),
             verbose=1)
     finish = time.time()
     print("Fitting model took:", finish-start)
@@ -205,7 +211,7 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     # Plot training & validation accuracy values
     plt.plot(history.history['acc'])
     plt.plot(history.history['val_acc'])
-    plt.title('Single LSTM + W2V')
+    plt.title('Model Acc on Val Post-Tuning')
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(['Training', 'Validation'], loc='upper left')
