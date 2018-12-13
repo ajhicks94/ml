@@ -17,6 +17,7 @@ from keras.models import Sequential
 from keras.preprocessing import sequence
 from keras import optimizers
 from keras import regularizers
+from lxml import etree
 
 from hp import create_word_index, get_pretrained_embeddings, load_data, print_word_from_idx
 
@@ -207,11 +208,42 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
             verbose=1)
     finish = time.time()
     print("Fitting model took:", finish-start)
+    model.save('results/model.h5', overwrite=True)
+    # DO NOT UNCOMMENT THIS
+    score, acc = model.evaluate(x_test, y_test,
+                                batch_size=batch_size)
+    print('Test score:', score)
+    print('Test accuracy:', acc)
+    predictions = model.predict_classes(x_test, batch_size=32, verbose=1)
+
+    l = etree.parse(te_labels)
+    labels = l.findall('.//article')
+
+    if len(predictions) != len(labels):
+        print("Num of predictions does not match num of test labels")
+        sys.exit()
+
+    print("predictions=", predictions)
+    with open('results/predictions.txt', 'w') as f:
+        i = 0
+        for article in labels:
+            if predictions[i] == 0:
+                p = "false"
+            elif predictions[i] == 1:
+                p = "true"
+            else:
+                print("Error detecting hp")
+                sys.exit()
+
+            f.write(article.get('id') + " " + p + " \n")
+            i += 1
+
+    print("Completed writing predictions.")
 
     # Plot training & validation accuracy values
     plt.plot(history.history['acc'])
     plt.plot(history.history['val_acc'])
-    plt.title('Model Acc on Val Post-Tuning')
+    plt.title('Model Acc on Val Full Dataset')
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(['Training', 'Validation'], loc='upper left')
@@ -267,12 +299,6 @@ def main(tr, tr_labels, val, val_labels, te, te_labels):
     #print("val_acc:\t", history['val_acc'])
     #print("loss:\t\t", history['loss'])
     #print("acc:\t\t", history['acc'])
-
-    # DO NOT UNCOMMENT THIS
-    #score, acc = model.evaluate(x_test, y_test,
-    #                            batch_size=batch_size)
-    #print('Test score:', score)
-    #print('Test accuracy:', acc)
 
 if __name__ == '__main__':
     main(*parse_options())
